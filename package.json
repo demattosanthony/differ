@@ -1,0 +1,35 @@
+{
+  "name": "differ",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "differ": "bun run differ.ts",
+    "build": "mkdir -p dist && bun run build:ui && bun run build:cli",
+    "build:cli": "bun build ./differ.ts --compile --outfile dist/differ",
+    "build:cli:darwin-arm64": "bun build ./differ.ts --compile --target=bun-darwin-arm64 --outfile dist/darwin-arm64/differ",
+    "build:cli:darwin-x64": "bun build ./differ.ts --compile --target=bun-darwin-x64 --outfile dist/darwin-x64/differ",
+    "build:cli:linux-arm64": "bun build ./differ.ts --compile --target=bun-linux-arm64 --outfile dist/linux-arm64/differ",
+    "build:cli:linux-x64": "bun build ./differ.ts --compile --target=bun-linux-x64 --outfile dist/linux-x64/differ",
+    "build:cli:windows-x64": "bun build ./differ.ts --compile --target=bun-windows-x64 --outfile dist/windows-x64/differ.exe",
+    "build:ui": "bun build ./ui/index.html --outdir dist/.differ-dist --minify && cp ./ui/manifest.webmanifest ./ui/sw.js ./ui/icon.svg dist/.differ-dist/",
+    "build:release:darwin-arm64": "bun run build:ui && bun run build:cli:darwin-arm64 && mkdir -p dist/darwin-arm64 && cp -R dist/.differ-dist dist/darwin-arm64/",
+    "build:release:darwin-x64": "bun run build:ui && bun run build:cli:darwin-x64 && mkdir -p dist/darwin-x64 && cp -R dist/.differ-dist dist/darwin-x64/",
+    "build:release:linux-arm64": "bun run build:ui && bun run build:cli:linux-arm64 && mkdir -p dist/linux-arm64 && cp -R dist/.differ-dist dist/linux-arm64/",
+    "build:release:linux-x64": "bun run build:ui && bun run build:cli:linux-x64 && mkdir -p dist/linux-x64 && cp -R dist/.differ-dist dist/linux-x64/",
+    "build:release:windows-x64": "bun run build:ui && bun run build:cli:windows-x64 && mkdir -p dist/windows-x64 && cp -R dist/.differ-dist dist/windows-x64/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pierre/diffs": "^1.0.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "shiki": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.8",
+    "@types/node": "^25.2.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

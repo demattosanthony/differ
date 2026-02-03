@@ -1,0 +1,111 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: v1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+            bun_target: bun-darwin-arm64
+            bin: differ
+          - os: macos-13
+            target: darwin-x64
+            bun_target: bun-darwin-x64
+            bin: differ
+          - os: ubuntu-24.04
+            target: linux-x64
+            bun_target: bun-linux-x64
+            bin: differ
+          - os: ubuntu-24.04-arm64
+            target: linux-arm64
+            bun_target: bun-linux-arm64
+            bin: differ
+          - os: windows-latest
+            target: windows-x64
+            bun_target: bun-windows-x64
+            bin: differ.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build UI
+        run: bun run build:ui
+
+      - name: Build CLI
+        shell: bash
+        run: |
+          mkdir -p "dist/${{ matrix.target }}"
+          bun build ./differ.ts --compile --target=${{ matrix.bun_target }} --outfile "dist/${{ matrix.target }}/${{ matrix.bin }}"
+
+      - name: Bundle UI assets
+        shell: bash
+        run: cp -R dist/.differ-dist "dist/${{ matrix.target }}/"
+
+      - name: Package release archive
+        shell: bash
+        run: |
+          tar -czf "dist/differ-${RELEASE_TAG}-${{ matrix.target }}.tar.gz" -C "dist/${{ matrix.target }}" .
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: differ-${{ matrix.target }}
+          path: dist/differ-${RELEASE_TAG}-${{ matrix.target }}.tar.gz
+
+  release:
+    name: publish
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - name: Download archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect archives
+        shell: bash
+        run: |
+          mkdir -p dist/out
+          find dist -name "*.tar.gz" -exec cp {} dist/out/ \;
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd dist/out
+          sha256sum *.tar.gz > checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            dist/out/*.tar.gz
+            dist/out/checksums.txt
