@@ -41,10 +41,6 @@ jobs:
             target: linux-arm64
             bun_target: bun-linux-arm64
             bin: differ
-          - os: windows-latest
-            target: windows-x64
-            bun_target: bun-windows-x64
-            bin: differ.exe
 
     steps:
       - name: Checkout
