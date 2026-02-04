@@ -1,10 +1,13 @@
 import React from "react";
-import type { DiffData, DiffFile } from "../types";
+import type { CompareMode, CompareSpec, DiffData, DiffFile } from "../types";
 import type { TreeNode } from "../utils/tree";
 import { FileIcon } from "./FileIcon";
 
 type SidebarProps = {
   data: DiffData | null;
+  compareLabel: string;
+  compare: CompareSpec;
+  onCompareModeChange: (mode: CompareMode) => void;
   files: DiffFile[];
   tree: TreeNode[];
   activePath: string | null;
@@ -18,6 +21,9 @@ type SidebarProps = {
 
 export function Sidebar({
   data,
+  compareLabel,
+  compare,
+  onCompareModeChange,
   files,
   tree,
   activePath,
@@ -81,6 +87,30 @@ export function Sidebar({
       <div className="sidebar-head">
         <div className="sidebar-top">
           <div className="repo-name">{data?.repo.name ?? "Loading"}</div>
+        </div>
+        <div className="compare-context">
+          <span className="compare-label">Compare</span>
+          <span className="compare-value">{compareLabel}</span>
+        </div>
+        <div className="compare-tabs" role="tablist" aria-label="Compare mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={compare.mode === "working"}
+            className={`tab ${compare.mode === "working" ? "active" : ""}`}
+            onClick={() => onCompareModeChange("working")}
+          >
+            Working
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={compare.mode === "range"}
+            className={`tab ${compare.mode === "range" ? "active" : ""}`}
+            onClick={() => onCompareModeChange("range")}
+          >
+            Branch
+          </button>
         </div>
         <div className="summary">
           <span>{data?.summary.files ?? 0} files</span>

@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (example: v1.2.3)"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -36,10 +30,6 @@ jobs:
           - os: ubuntu-24.04
             target: linux-x64
             bun_target: bun-linux-x64
-            bin: differ
-          - os: ubuntu-24.04-arm64
-            target: linux-arm64
-            bun_target: bun-linux-arm64
             bin: differ
 
     steps:

@@ -1,15 +1,32 @@
+import type { CompareMode, CompareSpec } from "../types";
 import type { ThemeId } from "../themes";
 import { themes } from "../themes";
 
 type SettingsModalProps = {
   open: boolean;
   themeId: ThemeId;
+  compare: CompareSpec;
+  compareOverridden: boolean;
   onClose: () => void;
   onThemeChange: (themeId: ThemeId) => void;
+  onCompareChange: (compare: CompareSpec) => void;
+  onCompareReset: () => void;
 };
 
-export function SettingsModal({ open, themeId, onClose, onThemeChange }: SettingsModalProps) {
+export function SettingsModal({
+  open,
+  themeId,
+  compare,
+  compareOverridden,
+  onClose,
+  onThemeChange,
+  onCompareChange,
+  onCompareReset,
+}: SettingsModalProps) {
   if (!open) return null;
+
+  const baseValue = compare.mode === "range" ? compare.base ?? "" : "";
+  const headValue = compare.mode === "range" ? compare.head ?? "" : "";
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -36,6 +53,53 @@ export function SettingsModal({ open, themeId, onClose, onThemeChange }: Setting
               </option>
             ))}
           </select>
+          <label className="settings-label" htmlFor="compare-select">
+            Compare
+          </label>
+          <select
+            id="compare-select"
+            className="settings-select"
+            value={compare.mode}
+            onChange={(event) => {
+              const mode = event.target.value as CompareMode;
+              if (mode === "working") {
+                onCompareChange({ mode: "working" });
+                return;
+              }
+              onCompareChange({ mode: "range", base: baseValue, head: headValue });
+            }}
+          >
+            <option value="working">Working Tree</option>
+            <option value="range">Branch Compare</option>
+          </select>
+          <label className="settings-label" htmlFor="compare-base">
+            Base
+          </label>
+          <input
+            id="compare-base"
+            className="settings-input"
+            placeholder="origin/HEAD"
+            value={baseValue}
+            onChange={(event) => onCompareChange({ mode: "range", base: event.target.value, head: headValue })}
+            disabled={compare.mode !== "range"}
+          />
+          <label className="settings-label" htmlFor="compare-head">
+            Head
+          </label>
+          <input
+            id="compare-head"
+            className="settings-input"
+            placeholder="HEAD"
+            value={headValue}
+            onChange={(event) => onCompareChange({ mode: "range", base: baseValue, head: event.target.value })}
+            disabled={compare.mode !== "range"}
+          />
+          <div className="settings-help">Leave base/head blank to use the repo defaults.</div>
+          {compareOverridden ? (
+            <button type="button" className="settings-reset" onClick={onCompareReset}>
+              Use repo default
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

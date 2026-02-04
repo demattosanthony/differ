@@ -3,8 +3,16 @@ import { ensureUiAssets } from "./assets";
 import { createDiffNotifier } from "./notifier";
 import { createRequestHandler } from "./router";
 import { startRepoWatcher } from "./watch";
+import type { CompareSpec } from "../shared/types";
+import { normalizeCompare } from "./git";
 
-export async function startServer({ repoRoot, port }: { repoRoot: string; port: number }) {
+type StartServerOptions = {
+  repoRoot: string;
+  port: number;
+  compare?: CompareSpec;
+};
+
+export async function startServer({ repoRoot, port, compare }: StartServerOptions) {
   const runtimeDir = import.meta.dir;
   const isCompiledRuntime = runtimeDir.startsWith("/$bunfs/");
   const baseDir = isCompiledRuntime ? path.dirname(process.execPath) : path.dirname(runtimeDir);
@@ -17,7 +25,12 @@ export async function startServer({ repoRoot, port }: { repoRoot: string; port: 
   const notifier = createDiffNotifier(repoRoot);
   startRepoWatcher(repoRoot, notifier.notify);
 
-  const fetch = createRequestHandler({ repoRoot, distDir, notifier });
+  const defaultCompare = normalizeCompare(repoRoot, {
+    mode: compare?.mode,
+    base: compare?.base ?? null,
+    head: compare?.head ?? null,
+  });
+  const fetch = createRequestHandler({ repoRoot, distDir, notifier, defaultCompare });
   let server;
   try {
     server = Bun.serve({

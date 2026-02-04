@@ -1,29 +1,38 @@
 import path from "path";
 import { createHash } from "crypto";
-import type { DiffData, DiffFile } from "../shared/types";
+import type { CompareSpec, DiffData, DiffFile } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
 import { parseDiff } from "./diffParser";
-import { getFileDiffPatch, getWorkingDiff } from "./git";
+import { getDiff, getFileDiffPatch } from "./git";
 import { getShikiTheme, highlightDiff } from "./highlight";
 
 const parsedCache = new Map<string, { hash: string; data: DiffData }>();
 const highlightCache = new Map<string, DiffFile[]>();
 const fileDiffCache = new Map<string, { hash: string; data: DiffFile }>();
 
+const getCompareKey = (compare: CompareSpec) =>
+  compare.mode === "working" ? "working" : `range:${compare.base ?? ""}...${compare.head ?? ""}`;
+
+const getRepoCompareKey = (repoRoot: string, compare: CompareSpec) => `${repoRoot}::${getCompareKey(compare)}`;
+
 export function invalidateRepoCaches(repoRoot: string) {
-  parsedCache.delete(repoRoot);
+  const prefix = `${repoRoot}::`;
+  for (const key of parsedCache.keys()) {
+    if (key.startsWith(prefix)) parsedCache.delete(key);
+  }
   for (const key of highlightCache.keys()) {
-    if (key.startsWith(`${repoRoot}:`)) highlightCache.delete(key);
+    if (key.startsWith(prefix)) highlightCache.delete(key);
   }
   for (const key of fileDiffCache.keys()) {
-    if (key.startsWith(`${repoRoot}:`)) fileDiffCache.delete(key);
+    if (key.startsWith(prefix)) fileDiffCache.delete(key);
   }
 }
 
-export async function getDiffData(repoRoot: string, themeId: ThemeId): Promise<DiffData> {
-  const diff = getWorkingDiff(repoRoot, 3);
+export async function getDiffData(repoRoot: string, themeId: ThemeId, compare: CompareSpec): Promise<DiffData> {
+  const diff = getDiff(repoRoot, compare, 3);
   const hash = createHash("sha1").update(diff).digest("hex");
-  const cached = parsedCache.get(repoRoot);
+  const cacheKey = getRepoCompareKey(repoRoot, compare);
+  const cached = parsedCache.get(cacheKey);
   let baseData: DiffData;
 
   if (!cached || cached.hash !== hash) {
@@ -42,15 +51,16 @@ export async function getDiffData(repoRoot: string, themeId: ThemeId): Promise<D
       repo: { root: repoRoot, name: path.basename(repoRoot) },
       summary,
       revision: hash,
+      compare,
       files,
     };
-    parsedCache.set(repoRoot, { hash, data: baseData });
+    parsedCache.set(cacheKey, { hash, data: baseData });
   } else {
     baseData = cached.data;
   }
 
   const theme = getShikiTheme(themeId);
-  const highlightKey = `${repoRoot}:${hash}:${theme}`;
+  const highlightKey = `${cacheKey}:${hash}:${theme}`;
   const cachedHighlighted = highlightCache.get(highlightKey);
   if (cachedHighlighted) {
     return { ...baseData, files: cachedHighlighted };
@@ -66,15 +76,16 @@ export async function getFileDiff(
   repoRoot: string,
   filePath: string,
   themeId: ThemeId,
-  fullContext: boolean
+  fullContext: boolean,
+  compare: CompareSpec
 ): Promise<DiffFile | null> {
   const unified = fullContext ? 999999 : 3;
-  const diff = getFileDiffPatch(repoRoot, filePath, unified);
+  const diff = getFileDiffPatch(repoRoot, filePath, unified, compare);
   if (!diff.trim()) return null;
 
   const hash = createHash("sha1").update(diff).digest("hex");
   const theme = getShikiTheme(themeId);
-  const cacheKey = `${repoRoot}:${filePath}:${theme}:${fullContext ? "full" : "diff"}`;
+  const cacheKey = `${getRepoCompareKey(repoRoot, compare)}:${filePath}:${theme}:${fullContext ? "full" : "diff"}`;
   const cached = fileDiffCache.get(cacheKey);
   if (cached && cached.hash === hash) return cached.data;
 

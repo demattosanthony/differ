@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { DiffFile } from "./types";
+import type { CompareMode, CompareSpec, DiffFile } from "./types";
 import { themes, type ThemeId, type DiffViewMode } from "./themes";
 import { buildTree, listDirPaths } from "./utils/tree";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
+import { useCompareOverride } from "./hooks/useCompareOverride";
 import { useFullFileDiff } from "./hooks/useFullFileDiff";
 import { useInstallPrompt } from "./hooks/useInstallPrompt";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
@@ -30,7 +31,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const data = useDiffData(themeId);
+  const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
+  const data = useDiffData({ themeId, compare: compareOverride });
   const [selected, setSelected] = useSelectedFile(data?.files ?? []);
   const { showBanner, canInstall, isStandalone, promptInstall, dismissInstall } = useInstallPrompt();
   const active = data?.files.find((file) => file.path === selected) ?? data?.files[0] ?? null;
@@ -38,6 +40,7 @@ function App() {
     enabled: showFullFile,
     filePath: active?.path ?? null,
     themeId,
+    compare: compareOverride,
     revision: data?.revision,
   });
 
@@ -52,6 +55,8 @@ function App() {
   }, [data, query]);
 
   const tree = useMemo(() => buildTree(files), [files]);
+  const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
+  const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
 
   useEffect(() => {
     setExpanded(new Set(listDirPaths(tree)));
@@ -69,6 +74,16 @@ function App() {
     });
   };
 
+  const handleCompareModeChange = (mode: CompareMode) => {
+    if (mode === "working") {
+      setCompareOverride({ mode: "working" });
+      return;
+    }
+    const base = compareDisplay.mode === "range" ? compareDisplay.base ?? undefined : undefined;
+    const head = compareDisplay.mode === "range" ? compareDisplay.head ?? undefined : undefined;
+    setCompareOverride({ mode: "range", base, head });
+  };
+
   return (
     <div className="page">
       {showBanner && !isStandalone ? (
@@ -81,6 +96,9 @@ function App() {
       <main className="layout">
         <Sidebar
           data={data}
+          compareLabel={compareLabel}
+          compare={compareDisplay}
+          onCompareModeChange={handleCompareModeChange}
           files={files}
           tree={tree}
           activePath={active?.path ?? null}
@@ -104,8 +122,12 @@ function App() {
       <SettingsModal
         open={settingsOpen}
         themeId={themeId}
+        compare={compareDisplay}
+        compareOverridden={hasCompareOverride}
         onClose={() => setSettingsOpen(false)}
         onThemeChange={setThemeId}
+        onCompareChange={setCompareOverride}
+        onCompareReset={resetCompareOverride}
       />
     </div>
   );
@@ -145,4 +167,11 @@ function InstallBanner({
       </div>
     </div>
   );
+}
+
+function formatCompareLabel(compare: CompareSpec) {
+  if (!compare || compare.mode === "working") return "Working Tree";
+  const base = compare.base?.trim() || "origin/HEAD";
+  const head = compare.head?.trim() || "HEAD";
+  return `${base}...${head}`;
 }

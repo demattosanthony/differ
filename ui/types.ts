@@ -1,1 +1,1 @@
-export type { DiffLine, DiffHunk, DiffFile, DiffData } from "../shared/types";
+export type { CompareMode, CompareSpec, DiffLine, DiffHunk, DiffFile, DiffData } from "../shared/types";

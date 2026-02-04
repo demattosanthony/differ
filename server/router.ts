@@ -1,15 +1,18 @@
 import path from "path";
+import type { CompareSpec } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
+import { normalizeCompare } from "./git";
 
 type RequestHandlerOptions = {
   repoRoot: string;
   distDir: string;
   notifier: DiffNotifier;
+  defaultCompare: CompareSpec;
 };
 
-export function createRequestHandler({ repoRoot, distDir, notifier }: RequestHandlerOptions) {
+export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompare }: RequestHandlerOptions) {
   return async (request: Request) => {
     const url = new URL(request.url);
     if (url.pathname === "/api/watch") {
@@ -18,7 +21,8 @@ export function createRequestHandler({ repoRoot, distDir, notifier }: RequestHan
 
     if (url.pathname === "/api/diff") {
       const requestedTheme = (url.searchParams.get("theme") as ThemeId | null) ?? "vscode-dark";
-      const data = await getDiffData(repoRoot, requestedTheme);
+      const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
+      const data = await getDiffData(repoRoot, requestedTheme, compare);
       return Response.json(data);
     }
 
@@ -27,7 +31,8 @@ export function createRequestHandler({ repoRoot, distDir, notifier }: RequestHan
       const requestedTheme = (url.searchParams.get("theme") as ThemeId | null) ?? "vscode-dark";
       const full = url.searchParams.get("full") === "1";
       if (!filePath) return new Response("Missing path", { status: 400 });
-      const data = await getFileDiff(repoRoot, filePath, requestedTheme, full);
+      const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
+      const data = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare);
       if (!data) return new Response("Not found", { status: 404 });
       return Response.json(data);
     }
@@ -44,4 +49,20 @@ export function createRequestHandler({ repoRoot, distDir, notifier }: RequestHan
     }
     return new Response(file);
   };
+}
+
+function getCompareFromRequest(url: URL, repoRoot: string, fallback: CompareSpec): CompareSpec {
+  const mode = url.searchParams.get("compare");
+  const base = url.searchParams.get("base");
+  const head = url.searchParams.get("head");
+  if (!mode && !base && !head) return fallback;
+  if (mode === "working") return { mode: "working" };
+  if (mode) {
+    return normalizeCompare(repoRoot, {
+      mode,
+      base: base ?? fallback.base,
+      head: head ?? fallback.head,
+    });
+  }
+  return normalizeCompare(repoRoot, { base, head });
 }

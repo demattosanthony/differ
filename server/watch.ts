@@ -26,4 +26,19 @@ export function startRepoWatcher(repoRoot: string, onChange: () => void) {
   } catch {
     // ignore missing git index
   }
+
+  const gitDir = path.join(repoRoot, ".git");
+  const gitWatchPaths = [
+    path.join(gitDir, "HEAD"),
+    path.join(gitDir, "packed-refs"),
+    path.join(gitDir, "refs", "heads"),
+    path.join(gitDir, "refs", "remotes"),
+  ];
+  for (const watchPath of gitWatchPaths) {
+    try {
+      watch(watchPath, () => onChange());
+    } catch {
+      // ignore missing git refs
+    }
+  }
 }

@@ -18,6 +18,9 @@ Options:
 
 - `--path <dir>`: repo path (defaults to current directory)
 - `--port <port>`: server port (defaults to 4141)
+- `--compare <working|range|pr>`: compare working tree (default) or branch range
+- `--base <ref>`: base ref for range compare (defaults to origin/HEAD)
+- `--head <ref>`: head ref for range compare (defaults to HEAD)
 
 ## PWA install
 
