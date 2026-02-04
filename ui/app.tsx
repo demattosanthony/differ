@@ -57,6 +57,7 @@ function App() {
   const tree = useMemo(() => buildTree(files), [files]);
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
+  const emptyDiffMessage = data ? (data.files.length ? "No matching files" : "No changes") : "Loading diff…";
 
   useEffect(() => {
     setExpanded(new Set(listDirPaths(tree)));
@@ -112,6 +113,7 @@ function App() {
 
         <DiffView
           file={showFullFile ? fullFileDiff ?? active : active}
+          emptyMessage={emptyDiffMessage}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           showFullFile={showFullFile}

@@ -1,6 +1,7 @@
-# differ
+<a id="readme-top"></a>
 
-Local git diff viewer that launches a browser UI.
+<h1 align="center"><code>differ</code></h1>
+<p align="center"><em>Review and refine Git diffs before you push</em></p>
 
 ## Install
 

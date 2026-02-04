@@ -5,6 +5,7 @@ type SplitCellType = "add" | "del" | "context" | "empty";
 
 type DiffViewProps = {
   file: DiffFile | null;
+  emptyMessage: string;
   viewMode: DiffViewMode;
   onViewModeChange: (mode: DiffViewMode) => void;
   showFullFile: boolean;
@@ -110,6 +111,7 @@ const ModeToggle = ({ active, onToggle }: { active: boolean; onToggle: (value: b
 
 export function DiffView({
   file,
+  emptyMessage,
   viewMode,
   onViewModeChange,
   showFullFile,
@@ -119,7 +121,7 @@ export function DiffView({
   if (!file) {
     return (
       <section className="diff-view">
-        <div className="empty centered">Loading diff…</div>
+        <div className="empty centered">{emptyMessage}</div>
       </section>
     );
   }
