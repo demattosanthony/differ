@@ -13,13 +13,27 @@ type FullFileOptions = {
   filePath: string | null;
   themeId: ThemeId;
   compare: CompareSpec | null;
+  githubToken?: string | null;
   revision?: string;
 };
 
-export function useFullFileDiff({ enabled, filePath, themeId, compare, revision }: FullFileOptions): FullFileState {
+export function useFullFileDiff({
+  enabled,
+  filePath,
+  themeId,
+  compare,
+  githubToken,
+  revision,
+}: FullFileOptions): FullFileState {
   const [diff, setDiff] = useState<DiffFile | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
+  const compareKey = compare
+    ? compare.mode === "pr"
+      ? `pr:${compare.number}`
+      : compare.mode === "range"
+        ? `range:${compare.base ?? ""}:${compare.head ?? ""}`
+        : "working"
+    : "default";
 
   useEffect(() => {
     if (!enabled || !filePath) {
@@ -35,7 +49,10 @@ export function useFullFileDiff({ enabled, filePath, themeId, compare, revision 
     params.set("theme", themeId);
     params.set("full", "1");
     appendCompareParams(params, compare);
-    fetch(`/api/diff-file?${params.toString()}`, { signal: controller.signal })
+    fetch(`/api/diff-file?${params.toString()}`, {
+      signal: controller.signal,
+      headers: githubToken ? { "x-github-token": githubToken } : undefined,
+    })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((json) => {
         setDiff(json);
@@ -48,7 +65,7 @@ export function useFullFileDiff({ enabled, filePath, themeId, compare, revision 
       });
 
     return () => controller.abort();
-  }, [enabled, filePath, themeId, revision, compareKey]);
+  }, [enabled, filePath, themeId, revision, compareKey, githubToken]);
 
   return { diff, status };
 }

@@ -27,8 +27,9 @@ export async function startServer({ repoRoot, port, compare }: StartServerOption
 
   const defaultCompare = normalizeCompare(repoRoot, {
     mode: compare?.mode,
-    base: compare?.base ?? null,
-    head: compare?.head ?? null,
+    base: compare?.mode === "range" ? compare.base ?? null : null,
+    head: compare?.mode === "range" ? compare.head ?? null : null,
+    number: compare?.mode === "pr" ? compare.number : null,
   });
   const fetch = createRequestHandler({ repoRoot, distDir, notifier, defaultCompare });
   let server;

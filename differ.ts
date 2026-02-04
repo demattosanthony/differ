@@ -13,7 +13,7 @@ const getArg = (name: string) => {
 
 const requestedPort = Number(getArg("port") ?? "4141");
 const targetPath = getArg("path") ?? process.cwd();
-const compare = resolveCompareArgs(getArg("compare"), getArg("base"), getArg("head"));
+const compare = resolveCompareArgs(getArg("compare"), getArg("base"), getArg("head"), getArg("pr"));
 const pwaAppName = "Differ";
 let cleanupRegistered = false;
 let openedPwaApp = false;
@@ -29,10 +29,11 @@ const url = `http://localhost:${port}/`;
 openBrowser(url, requestedPort);
 console.log(`differ: ${url}`);
 
-function resolveCompareArgs(compareArg?: string, baseArg?: string, headArg?: string): CompareSpec {
+function resolveCompareArgs(compareArg?: string, baseArg?: string, headArg?: string, prArg?: string): CompareSpec {
   const mode = compareArg?.trim();
   const base = baseArg?.trim();
   const head = headArg?.trim();
+  const prNumber = Number(prArg?.trim());
 
   if (mode && mode !== "working" && mode !== "range" && mode !== "pr") {
     console.error(`differ: unknown compare mode "${mode}" (use working, range, or pr)`);
@@ -40,8 +41,15 @@ function resolveCompareArgs(compareArg?: string, baseArg?: string, headArg?: str
   }
 
   if (mode === "working") return { mode: "working" };
+  if (mode === "pr" || Number.isFinite(prNumber)) {
+    if (Number.isFinite(prNumber) && prNumber > 0) {
+      return { mode: "pr", number: prNumber };
+    }
+    console.error("differ: missing or invalid --pr <number>");
+    process.exit(1);
+  }
 
-  const wantsRange = mode === "range" || mode === "pr" || Boolean(base || head);
+  const wantsRange = mode === "range" || Boolean(base || head);
   if (!wantsRange) return { mode: "working" };
   return { mode: "range", base: base || undefined, head: head || undefined };
 }

@@ -17,6 +17,17 @@ type SidebarProps = {
   onToggleDir: (path: string) => void;
   onSelectFile: (path: string) => void;
   onOpenSettings: () => void;
+  onToggleViewed?: (path: string, nextViewed: boolean) => void;
+  canReview?: boolean;
+  reviewPendingId?: number | null;
+  reviewEvent?: "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+  reviewBody?: string;
+  reviewBusy?: boolean;
+  reviewError?: string | null;
+  onReviewBodyChange?: (value: string) => void;
+  onReviewEventChange?: (value: "COMMENT" | "APPROVE" | "REQUEST_CHANGES") => void;
+  onStartReview?: () => void;
+  onSubmitReview?: () => void;
 };
 
 export function Sidebar({
@@ -33,6 +44,17 @@ export function Sidebar({
   onToggleDir,
   onSelectFile,
   onOpenSettings,
+  onToggleViewed,
+  canReview = false,
+  reviewPendingId = null,
+  reviewEvent = "COMMENT",
+  reviewBody = "",
+  reviewBusy = false,
+  reviewError = null,
+  onReviewBodyChange,
+  onReviewEventChange,
+  onStartReview,
+  onSubmitReview,
 }: SidebarProps) {
   const renderTree = (nodes: TreeNode[], depth = 0) =>
     nodes.map((node) => {
@@ -78,6 +100,25 @@ export function Sidebar({
             <span className="add">+{node.file.additions}</span>
             <span className="del">-{node.file.deletions}</span>
           </span>
+          {typeof node.file.viewed === "boolean" && onToggleViewed ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className={`viewed-toggle ${node.file.viewed ? "active" : ""}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleViewed(node.path, !node.file.viewed);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onToggleViewed(node.path, !node.file.viewed);
+              }}
+              aria-pressed={node.file.viewed}
+            >
+              ✓
+            </span>
+          ) : null}
         </button>
       );
     });
@@ -111,7 +152,26 @@ export function Sidebar({
           >
             Branch
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={compare.mode === "pr"}
+            className={`tab ${compare.mode === "pr" ? "active" : ""}`}
+            onClick={() => onCompareModeChange("pr")}
+          >
+            PR
+          </button>
         </div>
+        {compare.mode === "pr" ? (
+          <div className="pr-panel">
+            <div className="pr-title">
+              {data?.pr ? `PR #${data.pr.number}: ${data.pr.title}` : "Pull Request"}
+            </div>
+            {data?.pr?.headRef ? (
+              <div className="pr-refs">{data.pr.baseRef} -&gt; {data.pr.headRef}</div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="summary">
           <span>{data?.summary.files ?? 0} files</span>
           <span className="add">+{data?.summary.additions ?? 0}</span>
@@ -133,6 +193,60 @@ export function Sidebar({
           renderTree(tree)
         )}
       </div>
+      {compare.mode === "pr" ? (
+        <div className="review-panel">
+          <div className="review-header">
+            <span>Review</span>
+            {reviewPendingId ? <span className="review-status">Pending #{reviewPendingId}</span> : null}
+          </div>
+          {canReview ? (
+            <>
+              <textarea
+                className="review-input"
+                rows={3}
+                placeholder="Review summary"
+                value={reviewBody}
+                onChange={(event) => onReviewBodyChange?.(event.target.value)}
+              />
+              <div className="review-actions">
+                <select
+                  className="review-select"
+                  value={reviewEvent}
+                  onChange={(event) =>
+                    onReviewEventChange?.(event.target.value as "COMMENT" | "APPROVE" | "REQUEST_CHANGES")
+                  }
+                >
+                  <option value="COMMENT">Comment</option>
+                  <option value="APPROVE">Approve</option>
+                  <option value="REQUEST_CHANGES">Request changes</option>
+                </select>
+                {reviewPendingId ? (
+                  <button
+                    type="button"
+                    className="review-submit"
+                    onClick={onSubmitReview}
+                    disabled={reviewBusy}
+                  >
+                    Submit
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="review-submit"
+                    onClick={onStartReview}
+                    disabled={reviewBusy}
+                  >
+                    Start review
+                  </button>
+                )}
+              </div>
+              {reviewError ? <div className="review-error">{reviewError}</div> : null}
+            </>
+          ) : (
+            <div className="review-hint">Add a GitHub token in Settings to review.</div>
+          )}
+        </div>
+      ) : null}
       <div className="sidebar-footer">
         <button type="button" className="settings-button" onClick={onOpenSettings}>
           <span className="settings-icon" aria-hidden="true">

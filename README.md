@@ -26,6 +26,7 @@ Options:
 - `--compare <working|range|pr>`: compare working tree (default) or branch range
 - `--base <ref>`: base ref for range compare (defaults to origin/HEAD)
 - `--head <ref>`: head ref for range compare (defaults to HEAD)
+- `--pr <number>`: pull request number for PR compare
 
 ## PWA install
 
