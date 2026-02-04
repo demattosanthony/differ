@@ -7,15 +7,15 @@ export type DiffFile = {
   additions: number;
   deletions: number;
   hunks: DiffHunk[];
+  viewed?: boolean;
 };
 
-export type CompareMode = "working" | "range";
+export type CompareMode = "working" | "range" | "pr";
 
-export type CompareSpec = {
-  mode: CompareMode;
-  base?: string | null;
-  head?: string | null;
-};
+export type CompareSpec =
+  | { mode: "working" }
+  | { mode: "range"; base?: string | null; head?: string | null }
+  | { mode: "pr"; number: number };
 
 export type DiffData = {
   repo: { root: string; name: string };
@@ -23,4 +23,15 @@ export type DiffData = {
   revision: string;
   compare: CompareSpec;
   files: DiffFile[];
+  pr?: PullRequestInfo;
+  fullFileAvailable?: boolean;
+};
+
+export type PullRequestInfo = {
+  number: number;
+  title: string;
+  url: string;
+  headSha: string;
+  baseRef: string;
+  headRef: string;
 };

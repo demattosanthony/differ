@@ -4,6 +4,7 @@ type CompareInput = {
   mode?: string | null;
   base?: string | null;
   head?: string | null;
+  number?: string | number | null;
 };
 
 const getNullPath = () => (process.platform === "win32" ? "NUL" : "/dev/null");
@@ -15,6 +16,29 @@ export function runGit(cwd: string, args: string[]) {
     stderr: "ignore",
   });
   return result.stdout.toString();
+}
+
+export type RepoInfo = { owner: string; repo: string };
+
+export function getOriginRepoInfo(repoRoot: string): RepoInfo | null {
+  const remoteUrl = runGit(repoRoot, ["config", "--get", "remote.origin.url"]).trim();
+  if (!remoteUrl) return null;
+
+  const sshMatch = remoteUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+
+  const sshUrlMatch = remoteUrl.match(/^ssh:\/\/git@github\.com\/(.+?)\/(.+?)(?:\.git)?$/);
+  if (sshUrlMatch) return { owner: sshUrlMatch[1], repo: sshUrlMatch[2] };
+
+  try {
+    const url = new URL(remoteUrl);
+    if (url.hostname !== "github.com") return null;
+    const [owner, repo] = url.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
+    if (!owner || !repo) return null;
+    return { owner, repo };
+  } catch {
+    return null;
+  }
 }
 
 const listUntrackedFiles = (repoRoot: string) => {
@@ -40,7 +64,14 @@ export function normalizeCompare(repoRoot: string, input: CompareInput): Compare
   const mode = input.mode?.trim() ?? "";
   const base = input.base?.trim() ?? "";
   const head = input.head?.trim() ?? "";
+  const prNumber = Number(input.number);
   if (mode === "working") {
+    return { mode: "working" };
+  }
+  if (mode === "pr") {
+    if (Number.isFinite(prNumber) && prNumber > 0) {
+      return { mode: "pr", number: prNumber };
+    }
     return { mode: "working" };
   }
   const wantsRange = mode === "range" || mode === "pr" || Boolean(base || head);
@@ -78,14 +109,16 @@ export function getWorkingDiff(repoRoot: string, unified: number) {
   return [tracked, extra].filter(Boolean).join("\n");
 }
 
-export function getRangeDiff(repoRoot: string, compare: CompareSpec, unified: number) {
+export function getRangeDiff(repoRoot: string, compare: Extract<CompareSpec, { mode: "range" }>, unified: number) {
   const base = compare.base ?? getDefaultBase(repoRoot);
   const head = compare.head ?? "HEAD";
   return runGit(repoRoot, ["diff", "--no-color", "--patch", `--unified=${unified}`, `${base}...${head}`]);
 }
 
 export function getDiff(repoRoot: string, compare: CompareSpec, unified: number) {
-  return compare.mode === "working" ? getWorkingDiff(repoRoot, unified) : getRangeDiff(repoRoot, compare, unified);
+  if (compare.mode === "working") return getWorkingDiff(repoRoot, unified);
+  if (compare.mode === "range") return getRangeDiff(repoRoot, compare, unified);
+  return "";
 }
 
 const getWorkingFileDiffPatch = (repoRoot: string, filePath: string, unified: number) => {
@@ -106,7 +139,12 @@ const getWorkingFileDiffPatch = (repoRoot: string, filePath: string, unified: nu
   return runGit(repoRoot, ["diff", "--no-color", "--patch", `--unified=${unified}`, "--", filePath]);
 };
 
-const getRangeFileDiffPatch = (repoRoot: string, filePath: string, unified: number, compare: CompareSpec) => {
+const getRangeFileDiffPatch = (
+  repoRoot: string,
+  filePath: string,
+  unified: number,
+  compare: Extract<CompareSpec, { mode: "range" }>
+) => {
   const base = compare.base ?? getDefaultBase(repoRoot);
   const head = compare.head ?? "HEAD";
   return runGit(repoRoot, [
@@ -121,7 +159,7 @@ const getRangeFileDiffPatch = (repoRoot: string, filePath: string, unified: numb
 };
 
 export function getFileDiffPatch(repoRoot: string, filePath: string, unified: number, compare: CompareSpec) {
-  return compare.mode === "working"
-    ? getWorkingFileDiffPatch(repoRoot, filePath, unified)
-    : getRangeFileDiffPatch(repoRoot, filePath, unified, compare);
+  if (compare.mode === "working") return getWorkingFileDiffPatch(repoRoot, filePath, unified);
+  if (compare.mode === "range") return getRangeFileDiffPatch(repoRoot, filePath, unified, compare);
+  return "";
 }
