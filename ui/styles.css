@@ -337,13 +337,55 @@ body {
   min-height: 0;
 }
 
+.sidebar-shell {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 240px;
+  max-width: 560px;
+  transition: width 0.12s ease;
+}
+
+.sidebar-resizer {
+  position: relative;
+  flex: 0 0 2px;
+  width: 2px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--line);
+  opacity: 0.5;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.sidebar-resizer:hover::after,
+body.resizing .sidebar-resizer::after {
+  background: var(--selection-border);
+  opacity: 1;
+}
+
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.resizing .sidebar-shell {
+  transition: none;
+}
+
 .filelist {
   display: flex;
   flex-direction: column;
   background: var(--sidebar-bg);
-  border-right: 1px solid var(--line);
-  width: 320px;
-  min-width: 280px;
+  width: 100%;
+  min-width: 0;
   padding: 14px 0;
   overflow: hidden;
   overflow-x: hidden;
@@ -894,6 +936,11 @@ body {
   border-color: var(--tab-active-border);
 }
 
+.comment-submit.ghost {
+  background: transparent;
+  border-color: var(--line);
+}
+
 .comment-submit:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -917,6 +964,39 @@ body {
   gap: 6px;
   font-size: 11px;
   color: var(--muted);
+}
+
+.comment-draft-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.comment-tools {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.comment-tool {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.comment-tool:hover {
+  color: var(--text);
+}
+
+.comment-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .comment-avatar {
@@ -1053,6 +1133,11 @@ body {
   color: var(--muted);
 }
 
+.review-error {
+  font-size: 11px;
+  color: var(--del);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1170,6 +1255,15 @@ body {
 @media (max-width: 900px) {
   .layout {
     flex-direction: column;
+  }
+
+  .sidebar-shell {
+    width: 100% !important;
+    max-width: none;
+  }
+
+  .sidebar-resizer {
+    display: none;
   }
 
   .filelist {

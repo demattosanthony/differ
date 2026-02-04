@@ -23,6 +23,7 @@ type SidebarProps = {
   reviewEvent?: "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
   reviewBody?: string;
   reviewBusy?: boolean;
+  reviewError?: string | null;
   onReviewBodyChange?: (value: string) => void;
   onReviewEventChange?: (value: "COMMENT" | "APPROVE" | "REQUEST_CHANGES") => void;
   onStartReview?: () => void;
@@ -49,6 +50,7 @@ export function Sidebar({
   reviewEvent = "COMMENT",
   reviewBody = "",
   reviewBusy = false,
+  reviewError = null,
   onReviewBodyChange,
   onReviewEventChange,
   onStartReview,
@@ -238,6 +240,7 @@ export function Sidebar({
                   </button>
                 )}
               </div>
+              {reviewError ? <div className="review-error">{reviewError}</div> : null}
             </>
           ) : (
             <div className="review-hint">Add a GitHub token in Settings to review.</div>

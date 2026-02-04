@@ -52,7 +52,30 @@ export const createGitHubClient = ({ token }: GitHubClientOptions) => {
       body: options.body,
     });
     if (!response.ok) {
-      const message = `GitHub request failed (${response.status})`;
+      let detail = "";
+      try {
+        const text = await response.text();
+        if (text) {
+          try {
+            const json = JSON.parse(text) as { message?: string; errors?: Array<{ message?: string }> };
+            if (json.message) detail = json.message;
+            if (json.errors?.length) {
+              const errorDetails = json.errors
+                .map((error) => error.message)
+                .filter(Boolean)
+                .join(", ");
+              if (errorDetails) detail = detail ? `${detail} (${errorDetails})` : errorDetails;
+            }
+          } catch {
+            detail = text;
+          }
+        }
+      } catch {
+        detail = "";
+      }
+      const message = detail
+        ? `GitHub request failed (${response.status}): ${detail}`
+        : `GitHub request failed (${response.status})`;
       throw createError(message, response.status);
     }
     return response;

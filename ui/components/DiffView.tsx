@@ -16,12 +16,31 @@ type DiffViewProps = {
   allowFullFile: boolean;
   commentThreads?: ReviewThread[];
   canComment?: boolean;
-  onAddComment?: (input: { path: string; line: number; side: "LEFT" | "RIGHT"; body: string }) => Promise<void>;
+  onAddComment?: (input: {
+    path: string;
+    line: number;
+    side: "LEFT" | "RIGHT";
+    position?: number;
+    body: string;
+    reviewId?: number | null;
+  }) => Promise<void>;
   onReplyComment?: (input: { commentId: number; body: string }) => Promise<void>;
+  onEditComment?: (input: { commentId: number; body: string }) => Promise<void>;
+  onDeleteComment?: (commentId: number) => Promise<void>;
+  currentUserLogin?: string | null;
+  reviewPendingId?: number | null;
+  onStartReview?: () => Promise<number | null | undefined>;
+  pendingCommentIds?: Set<number>;
 };
 
-type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null };
-type SplitSideRow = { type: "add" | "del" | "context"; number: number | null; content: string; html?: string };
+type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null; position: number };
+type SplitSideRow = {
+  type: "add" | "del" | "context";
+  number: number | null;
+  position: number;
+  content: string;
+  html?: string;
+};
 
 const parseHunkHeader = (header: string) => {
   const match = header.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
@@ -34,12 +53,12 @@ const marker = (type: SplitCellType) => (type === "add" ? "+" : type === "del" ?
 const renderContent = (content: string, html?: string) =>
   html ? <span className="content" dangerouslySetInnerHTML={{ __html: html }} /> : <span className="content">{content}</span>;
 
-const buildRows = (hunkLines: DiffLine[], header: string): Row[] => {
+const buildRows = (hunkLines: DiffLine[], header: string, positionStart: number): Row[] => {
   const { oldStart, newStart } = parseHunkHeader(header);
   let oldLine = oldStart;
   let newLine = newStart;
 
-  return hunkLines.map((line) => {
+  return hunkLines.map((line, index) => {
     let oldNumber: number | null = null;
     let newNumber: number | null = null;
 
@@ -56,7 +75,7 @@ const buildRows = (hunkLines: DiffLine[], header: string): Row[] => {
       newLine += 1;
     }
 
-    return { line, oldNumber, newNumber };
+    return { line, oldNumber, newNumber, position: positionStart + index + 1 };
   });
 };
 
@@ -139,11 +158,23 @@ export function DiffView({
   canComment = false,
   onAddComment,
   onReplyComment,
+  onEditComment,
+  onDeleteComment,
+  currentUserLogin = null,
+  reviewPendingId = null,
+  onStartReview,
+  pendingCommentIds,
 }: DiffViewProps) {
-  const [draftLine, setDraftLine] = useState<{ line: number; side: "LEFT" | "RIGHT" } | null>(null);
+  const [draftLine, setDraftLine] = useState<{
+    line: number;
+    side: "LEFT" | "RIGHT";
+    position: number;
+  } | null>(null);
   const [draftBody, setDraftBody] = useState("");
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
   const [replyBody, setReplyBody] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editBody, setEditBody] = useState("");
 
   const threadLookup = useMemo(() => {
     const map = new Map<string, ReviewThread[]>();
@@ -162,10 +193,14 @@ export function DiffView({
     setDraftBody("");
     setReplyingTo(null);
     setReplyBody("");
+    setEditingId(null);
+    setEditBody("");
   }, [file?.path]);
 
-  const toggleDraft = (line: number, side: "LEFT" | "RIGHT") => {
-    setDraftLine((prev) => (prev && prev.line === line && prev.side === side ? null : { line, side }));
+  const toggleDraft = (line: number, side: "LEFT" | "RIGHT", position: number) => {
+    setDraftLine((prev) =>
+      prev && prev.line === line && prev.side === side ? null : { line, side, position }
+    );
     setDraftBody("");
   };
 
@@ -199,7 +234,10 @@ export function DiffView({
           </div>
         ) : (
           file.hunks.map((hunk, index) => {
-            const rows = buildRows(hunk.lines, hunk.header);
+            const positionOffset = file.hunks
+              .slice(0, index)
+              .reduce((acc, item) => acc + item.lines.length, 0);
+            const rows = buildRows(hunk.lines, hunk.header, positionOffset);
 
           if (viewMode === "stacked") {
             return (
@@ -222,7 +260,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="line-num line-num-button"
-                            onClick={() => toggleDraft(lineNumber!, side)}
+                            onClick={() => toggleDraft(lineNumber!, side, row.position)}
                             aria-label={`Comment on line ${displayNumber}`}
                           >
                             {displayNumber ?? ""}
@@ -236,7 +274,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="comment-action"
-                            onClick={() => toggleDraft(lineNumber!, side)}
+                            onClick={() => toggleDraft(lineNumber!, side, row.position)}
                             aria-label="Add comment"
                           >
                             +
@@ -258,6 +296,30 @@ export function DiffView({
                               <button type="button" className="comment-cancel" onClick={() => setDraftLine(null)}>
                                 Cancel
                               </button>
+                              {reviewPendingId ? null : (
+                                <button
+                                  type="button"
+                                  className="comment-submit ghost"
+                                  onClick={async () => {
+                                    if (!onStartReview || !draftLine) return;
+                                    const reviewId = await onStartReview();
+                                    if (!reviewId) return;
+                                    await onAddComment?.({
+                                      path: activePath,
+                                      line: draftLine.line,
+                                      side: draftLine.side,
+                                      position: draftLine.position,
+                                      body: draftBody,
+                                      reviewId,
+                                    });
+                                    setDraftLine(null);
+                                    setDraftBody("");
+                                  }}
+                                  disabled={!draftBody.trim()}
+                                >
+                                  Start review
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="comment-submit"
@@ -267,14 +329,16 @@ export function DiffView({
                                     path: activePath,
                                     line: draftLine.line,
                                     side: draftLine.side,
+                                    position: draftLine.position,
                                     body: draftBody,
+                                    reviewId: reviewPendingId ?? undefined,
                                   });
                                   setDraftLine(null);
                                   setDraftBody("");
                                 }}
                                 disabled={!draftBody.trim()}
                               >
-                                Add comment
+                                {reviewPendingId ? "Add to review" : "Add comment"}
                               </button>
                             </div>
                           </div>
@@ -284,6 +348,15 @@ export function DiffView({
                             key={thread.id}
                             thread={thread}
                             canReply={canComment}
+                            canEdit={Boolean(currentUserLogin)}
+                            currentUserLogin={currentUserLogin}
+                            editingId={editingId}
+                            editBody={editBody}
+                            setEditingId={setEditingId}
+                            setEditBody={setEditBody}
+                            onEdit={onEditComment}
+                            onDelete={onDeleteComment}
+                            pendingCommentIds={pendingCommentIds}
                             onReply={onReplyComment}
                             replyingTo={replyingTo}
                             setReplyingTo={setReplyingTo}
@@ -304,6 +377,7 @@ export function DiffView({
             .map((row) => ({
               type: row.line.type,
               number: row.oldNumber,
+              position: row.position,
               content: row.line.content,
               html: row.line.html,
             }));
@@ -312,6 +386,7 @@ export function DiffView({
             .map((row) => ({
               type: row.line.type,
               number: row.newNumber,
+              position: row.position,
               content: row.line.content,
               html: row.line.html,
             }));
@@ -334,7 +409,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="line-num line-num-button"
-                            onClick={() => toggleDraft(row.number!, "LEFT")}
+                            onClick={() => toggleDraft(row.number!, "LEFT", row.position)}
                             aria-label={`Comment on line ${row.number}`}
                           >
                             {row.number ?? ""}
@@ -348,7 +423,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="comment-action"
-                            onClick={() => toggleDraft(row.number!, "LEFT")}
+                            onClick={() => toggleDraft(row.number!, "LEFT", row.position)}
                             aria-label="Add comment"
                           >
                             +
@@ -370,6 +445,30 @@ export function DiffView({
                               <button type="button" className="comment-cancel" onClick={() => setDraftLine(null)}>
                                 Cancel
                               </button>
+                              {reviewPendingId ? null : (
+                                <button
+                                  type="button"
+                                  className="comment-submit ghost"
+                                  onClick={async () => {
+                                    if (!onStartReview || !draftLine) return;
+                                    const reviewId = await onStartReview();
+                                    if (!reviewId) return;
+                                    await onAddComment?.({
+                                      path: activePath,
+                                      line: draftLine.line,
+                                      side: draftLine.side,
+                                      position: draftLine.position,
+                                      body: draftBody,
+                                      reviewId,
+                                    });
+                                    setDraftLine(null);
+                                    setDraftBody("");
+                                  }}
+                                  disabled={!draftBody.trim()}
+                                >
+                                  Start review
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="comment-submit"
@@ -379,14 +478,16 @@ export function DiffView({
                                     path: activePath,
                                     line: draftLine.line,
                                     side: draftLine.side,
+                                    position: draftLine.position,
                                     body: draftBody,
+                                    reviewId: reviewPendingId ?? undefined,
                                   });
                                   setDraftLine(null);
                                   setDraftBody("");
                                 }}
                                 disabled={!draftBody.trim()}
                               >
-                                Add comment
+                                {reviewPendingId ? "Add to review" : "Add comment"}
                               </button>
                             </div>
                           </div>
@@ -396,6 +497,15 @@ export function DiffView({
                             key={thread.id}
                             thread={thread}
                             canReply={canComment}
+                            canEdit={Boolean(currentUserLogin)}
+                            currentUserLogin={currentUserLogin}
+                            editingId={editingId}
+                            editBody={editBody}
+                            setEditingId={setEditingId}
+                            setEditBody={setEditBody}
+                            onEdit={onEditComment}
+                            onDelete={onDeleteComment}
+                            pendingCommentIds={pendingCommentIds}
                             onReply={onReplyComment}
                             replyingTo={replyingTo}
                             setReplyingTo={setReplyingTo}
@@ -422,7 +532,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="line-num line-num-button"
-                            onClick={() => toggleDraft(row.number!, "RIGHT")}
+                            onClick={() => toggleDraft(row.number!, "RIGHT", row.position)}
                             aria-label={`Comment on line ${row.number}`}
                           >
                             {row.number ?? ""}
@@ -436,7 +546,7 @@ export function DiffView({
                           <button
                             type="button"
                             className="comment-action"
-                            onClick={() => toggleDraft(row.number!, "RIGHT")}
+                            onClick={() => toggleDraft(row.number!, "RIGHT", row.position)}
                             aria-label="Add comment"
                           >
                             +
@@ -458,6 +568,30 @@ export function DiffView({
                               <button type="button" className="comment-cancel" onClick={() => setDraftLine(null)}>
                                 Cancel
                               </button>
+                              {reviewPendingId ? null : (
+                                <button
+                                  type="button"
+                                  className="comment-submit ghost"
+                                  onClick={async () => {
+                                    if (!onStartReview || !draftLine) return;
+                                    const reviewId = await onStartReview();
+                                    if (!reviewId) return;
+                                    await onAddComment?.({
+                                      path: activePath,
+                                      line: draftLine.line,
+                                      side: draftLine.side,
+                                      position: draftLine.position,
+                                      body: draftBody,
+                                      reviewId,
+                                    });
+                                    setDraftLine(null);
+                                    setDraftBody("");
+                                  }}
+                                  disabled={!draftBody.trim()}
+                                >
+                                  Start review
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="comment-submit"
@@ -467,14 +601,16 @@ export function DiffView({
                                     path: activePath,
                                     line: draftLine.line,
                                     side: draftLine.side,
+                                    position: draftLine.position,
                                     body: draftBody,
+                                    reviewId: reviewPendingId ?? undefined,
                                   });
                                   setDraftLine(null);
                                   setDraftBody("");
                                 }}
                                 disabled={!draftBody.trim()}
                               >
-                                Add comment
+                                {reviewPendingId ? "Add to review" : "Add comment"}
                               </button>
                             </div>
                           </div>
@@ -484,6 +620,15 @@ export function DiffView({
                             key={thread.id}
                             thread={thread}
                             canReply={canComment}
+                            canEdit={Boolean(currentUserLogin)}
+                            currentUserLogin={currentUserLogin}
+                            editingId={editingId}
+                            editBody={editBody}
+                            setEditingId={setEditingId}
+                            setEditBody={setEditBody}
+                            onEdit={onEditComment}
+                            onDelete={onDeleteComment}
+                            pendingCommentIds={pendingCommentIds}
                             onReply={onReplyComment}
                             replyingTo={replyingTo}
                             setReplyingTo={setReplyingTo}
@@ -508,7 +653,16 @@ export function DiffView({
 function CommentThread({
   thread,
   canReply,
+  canEdit,
+  currentUserLogin,
+  editingId,
+  editBody,
+  setEditingId,
+  setEditBody,
+  onEdit,
+  onDelete,
   onReply,
+  pendingCommentIds,
   replyingTo,
   setReplyingTo,
   replyBody,
@@ -516,7 +670,16 @@ function CommentThread({
 }: {
   thread: ReviewThread;
   canReply: boolean;
+  canEdit: boolean;
+  currentUserLogin: string | null;
+  editingId: number | null;
+  editBody: string;
+  setEditingId: (value: number | null) => void;
+  setEditBody: (value: string) => void;
+  onEdit?: (input: { commentId: number; body: string }) => Promise<void>;
+  onDelete?: (commentId: number) => Promise<void>;
   onReply?: (input: { commentId: number; body: string }) => Promise<void>;
+  pendingCommentIds?: Set<number>;
   replyingTo: number | null;
   setReplyingTo: (value: number | null) => void;
   replyBody: string;
@@ -524,18 +687,73 @@ function CommentThread({
 }) {
   return (
     <div className="comment-thread">
-      {thread.comments.map((comment) => (
-        <div key={comment.id} className="comment">
-          <div className="comment-meta">
-            {comment.user.avatarUrl ? (
-              <img src={comment.user.avatarUrl} alt={comment.user.login} className="comment-avatar" />
-            ) : null}
-            <span className="comment-author">{comment.user.login}</span>
-            <span className="comment-time">{new Date(comment.createdAt).toLocaleString()}</span>
+      {thread.comments.map((comment) => {
+        const isEditing = editingId === comment.id;
+        const isDraft = comment.id < 0 || (pendingCommentIds?.has(comment.id) ?? false);
+        const canEditComment = canEdit && currentUserLogin && comment.user.login === currentUserLogin;
+        return (
+          <div key={comment.id} className="comment">
+            <div className="comment-meta">
+              {comment.user.avatarUrl ? (
+                <img src={comment.user.avatarUrl} alt={comment.user.login} className="comment-avatar" />
+              ) : null}
+              <span className="comment-author">{comment.user.login}</span>
+              <span className="comment-time">{new Date(comment.createdAt).toLocaleString()}</span>
+              {isDraft ? <span className="comment-draft-pill">Draft</span> : null}
+              {canEditComment ? (
+                <div className="comment-tools">
+                  <button
+                    type="button"
+                    className="comment-tool"
+                    onClick={() => {
+                      setEditingId(comment.id);
+                      setEditBody(comment.body);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="comment-tool"
+                    onClick={() => onDelete?.(comment.id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {isEditing ? (
+              <div className="comment-edit">
+                <textarea
+                  className="comment-input"
+                  rows={2}
+                  value={editBody}
+                  onChange={(event) => setEditBody(event.target.value)}
+                />
+                <div className="comment-actions">
+                  <button type="button" className="comment-cancel" onClick={() => setEditingId(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="comment-submit"
+                    disabled={!editBody.trim()}
+                    onClick={async () => {
+                      if (!onEdit) return;
+                      await onEdit({ commentId: comment.id, body: editBody });
+                      setEditingId(null);
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="comment-body">{comment.body}</div>
+            )}
           </div>
-          <div className="comment-body">{comment.body}</div>
-        </div>
-      ))}
+        );
+      })}
       {canReply ? (
         <div className="comment-reply">
           {replyingTo === thread.id ? (
