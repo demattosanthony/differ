@@ -1,7 +1,6 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef } from "react";
+import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
 import type { CompareMode, CompareSpec, DiffData, DiffFile } from "../types";
-import type { TreeNode } from "../utils/tree";
-import { FileIcon } from "./FileIcon";
 
 type SidebarProps = {
   data: DiffData | null;
@@ -9,15 +8,37 @@ type SidebarProps = {
   compare: CompareSpec;
   onCompareModeChange: (mode: CompareMode) => void;
   files: DiffFile[];
-  tree: TreeNode[];
   activePath: string | null;
   query: string;
   onQueryChange: (value: string) => void;
-  expanded: Set<string>;
-  onToggleDir: (path: string) => void;
   onSelectFile: (path: string) => void;
   onOpenSettings: () => void;
 };
+
+const fileTreeStyle = {
+  backgroundColor: "var(--sidebar-bg)",
+  color: "var(--text)",
+  colorScheme: "inherit",
+  height: "100%",
+  "--trees-bg-override": "var(--sidebar-bg)",
+  "--trees-bg-muted-override": "var(--panel)",
+  "--trees-fg-override": "var(--text)",
+  "--trees-fg-muted-override": "var(--muted)",
+  "--trees-accent-override": "var(--folder)",
+  "--trees-border-color-override": "var(--tree-border)",
+  "--trees-indent-guide-bg-override": "var(--tree-border)",
+  "--trees-focus-ring-color-override": "var(--selection-border)",
+  "--trees-selected-bg-override": "var(--selection)",
+  "--trees-selected-fg-override": "var(--title)",
+  "--trees-selected-focused-border-color-override": "var(--selection-border)",
+  "--trees-scrollbar-thumb-override": "var(--line)",
+  "--trees-font-family-override": '"IBM Plex Sans", "Helvetica Neue", sans-serif',
+  "--trees-font-size-override": "13px",
+  "--trees-item-padding-x-override": "8px",
+  "--trees-item-margin-x-override": "0px",
+  "--trees-border-radius-override": "6px",
+  "--trees-level-gap-override": "12px",
+} satisfies React.CSSProperties & Record<string, string>;
 
 export function Sidebar({
   data,
@@ -25,62 +46,99 @@ export function Sidebar({
   compare,
   onCompareModeChange,
   files,
-  tree,
   activePath,
   query,
   onQueryChange,
-  expanded,
-  onToggleDir,
   onSelectFile,
   onOpenSettings,
 }: SidebarProps) {
-  const renderTree = (nodes: TreeNode[], depth = 0) =>
-    nodes.map((node) => {
-      if (node.type === "dir") {
-        const isOpen = expanded.has(node.path);
-        return (
-          <div key={node.path} className="tree-node">
-            <button
-              type="button"
-              className={`tree-row tree-dir ${isOpen ? "open" : ""}`}
-              style={{ "--depth": depth } as React.CSSProperties}
-              onClick={() => onToggleDir(node.path)}
-            >
-              <span className="tree-chevron" aria-hidden="true">
-                <svg viewBox="0 0 16 16" className="icon">
-                  <path d={isOpen ? "M4 6l4 4 4-4" : "M6 4l4 4-4 4"} />
-                </svg>
-              </span>
-              <span className="tree-icon" aria-hidden="true">
-                <FileIcon path={node.path} type="directory" expanded={isOpen} className="icon" />
-              </span>
-              <span className="tree-name">{node.name}</span>
-            </button>
-            {isOpen && <div className="tree-children">{renderTree(node.children, depth + 1)}</div>}
-          </div>
-        );
+  const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const filesByPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
+  const filesByPathRef = useRef(filesByPath);
+  filesByPathRef.current = filesByPath;
+  const { model } = useFileTree({
+    flattenEmptyDirectories: true,
+    initialExpansion: "open",
+    initialSelectedPaths: activePath ? [activePath] : [],
+    paths,
+    fileTreeSearchMode: "hide-non-matches",
+    unsafeCSS: `
+      :host {
+        color: var(--trees-fg) !important;
+        background: var(--trees-bg) !important;
       }
 
-      return (
-        <button
-          key={node.path}
-          type="button"
-          className={`tree-row tree-file ${node.path === activePath ? "active" : ""}`}
-          style={{ "--depth": depth } as React.CSSProperties}
-          onClick={() => onSelectFile(node.path)}
-        >
-          <span className="tree-chevron spacer" aria-hidden="true" />
-          <span className="tree-icon" aria-hidden="true">
-            <FileIcon path={node.path} type="file" className="icon" />
-          </span>
-          <span className="tree-name">{node.name}</span>
-          <span className="file-stats">
-            <span className="add">+{node.file.additions}</span>
-            <span className="del">-{node.file.deletions}</span>
-          </span>
-        </button>
-      );
-    });
+      [data-file-tree-virtualized-wrapper="true"],
+      [data-file-tree-virtualized-root="true"],
+      [data-file-tree-virtualized-scroll="true"],
+      [data-file-tree-virtualized-list="true"],
+      [data-file-tree-virtualized-sticky="true"],
+      [role="tree"] {
+        background: var(--trees-bg) !important;
+      }
+
+      [data-type="item"] {
+        color: var(--trees-fg);
+        background: var(--trees-bg) !important;
+      }
+
+      [data-type="item"]:hover:not([data-item-selected="true"]) {
+        background: var(--trees-bg-muted) !important;
+      }
+
+      [data-item-selected="true"] {
+        background: var(--trees-selected-bg) !important;
+      }
+
+      [data-item-type="folder"] > [data-item-section="icon"] {
+        color: var(--trees-accent);
+      }
+
+      [data-item-type="folder"] > [data-item-section="content"] {
+        color: var(--trees-fg);
+        font-weight: 500;
+      }
+
+      [data-item-section="decoration"] {
+        color: var(--trees-fg-muted);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      [data-item-selected="true"] [data-item-section="decoration"] {
+        color: var(--trees-selected-fg);
+      }
+    `,
+    renderRowDecoration: ({ item }) => {
+      if (item.kind !== "file") return null;
+      const file = filesByPathRef.current.get(item.path);
+      if (!file) return null;
+      return { text: `+${file.additions} -${file.deletions}` };
+    },
+  });
+  const selectedPaths = useFileTreeSelection(model);
+
+  useEffect(() => {
+    model.resetPaths(paths);
+  }, [model, paths]);
+
+  useEffect(() => {
+    model.setSearch(query.trim() || null);
+  }, [model, query]);
+
+  useEffect(() => {
+    if (!activePath) return;
+    const item = model.getItem(activePath);
+    if (!item || item.isDirectory()) return;
+    item.select();
+    model.scrollToPath(activePath, { focus: false, offset: "nearest" });
+  }, [activePath, model]);
+
+  useEffect(() => {
+    const selectedPath = selectedPaths[0];
+    if (!selectedPath || !filesByPath.has(selectedPath)) return;
+    onSelectFile(selectedPath);
+  }, [filesByPath, onSelectFile, selectedPaths]);
 
   return (
     <aside className="filelist">
@@ -130,7 +188,11 @@ export function Sidebar({
             {data ? (data.files.length ? "No matching files" : "No changes") : "Loading changes…"}
           </div>
         ) : (
-          renderTree(tree)
+          <FileTree
+            className="diff-file-tree"
+            model={model}
+            style={fileTreeStyle}
+          />
         )}
       </div>
       <div className="sidebar-footer">

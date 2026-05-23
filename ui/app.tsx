@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import type { CompareMode, CompareSpec, DiffFile } from "./types";
 import { themes, type ThemeId, type DiffViewMode } from "./themes";
-import { buildTree, listDirPaths } from "./utils/tree";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
@@ -27,7 +26,6 @@ function App() {
     deserialize: (value) => value === "true",
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
   const data = useDiffData({ themeId, compare: compareOverride });
@@ -50,26 +48,9 @@ function App() {
     return data.files.filter((file) => file.path.toLowerCase().includes(needle));
   }, [data, query]);
 
-  const tree = useMemo(() => buildTree(files), [files]);
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
   const emptyDiffMessage = data ? (data.files.length ? "No matching files" : "No changes") : "Loading diff…";
-
-  useEffect(() => {
-    setExpanded(new Set(listDirPaths(tree)));
-  }, [tree]);
-
-  const toggleDir = (path: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  };
 
   const handleCompareModeChange = (mode: CompareMode) => {
     if (mode === "working") {
@@ -90,12 +71,9 @@ function App() {
           compare={compareDisplay}
           onCompareModeChange={handleCompareModeChange}
           files={files}
-          tree={tree}
           activePath={active?.path ?? null}
           query={query}
           onQueryChange={setQuery}
-          expanded={expanded}
-          onToggleDir={toggleDir}
           onSelectFile={setSelected}
           onOpenSettings={() => setSettingsOpen(true)}
         />
