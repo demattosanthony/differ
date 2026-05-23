@@ -1,7 +1,7 @@
 import path from "path";
 import { pathToFileURL } from "url";
 import { createHighlighter, type BundledLanguage, type Highlighter, type SpecialLanguage, type ThemeInput } from "shiki";
-import type { DiffFile } from "../shared/types";
+import type { DiffFile, SourceLine } from "../shared/types";
 import { themes, type ThemeId } from "../shared/themes";
 
 type ShikiLanguage = BundledLanguage | SpecialLanguage;
@@ -151,6 +151,34 @@ export async function highlightDiff(files: DiffFile[], themeId: ThemeId) {
     }
   }
 }
+
+export async function highlightSource(filePath: string, content: string, themeId: ThemeId): Promise<SourceLine[]> {
+  const highlighter = await getHighlighterInstance();
+  const theme = getShikiTheme(themeId);
+  const lang = resolveLanguage(filePath);
+  const lines = splitSourceLines(content);
+
+  if (!lines.length) return [];
+
+  let tokensResult;
+  try {
+    tokensResult = await highlighter.codeToTokens(lines.join("\n"), { lang, theme });
+  } catch {
+    tokensResult = await highlighter.codeToTokens(lines.join("\n"), { lang: "text", theme });
+  }
+
+  return lines.map((line, index) => ({
+    number: index + 1,
+    content: line,
+    html: tokensResult.tokens[index] ? tokensToHtml(tokensResult.tokens[index]) : undefined,
+  }));
+}
+
+const splitSourceLines = (content: string) => {
+  const lines = content.split(/\r?\n/);
+  if (content.endsWith("\n")) lines.pop();
+  return lines;
+};
 
 const resolveLanguage = (filePath: string) => {
   const base = path.basename(filePath);

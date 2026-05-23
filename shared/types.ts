@@ -24,3 +24,26 @@ export type DiffData = {
   compare: CompareSpec;
   files: DiffFile[];
 };
+
+export type ProjectFilesData = {
+  repo: { root: string; name: string };
+  revision: string;
+  compare: CompareSpec;
+  paths: string[];
+  directories: string[];
+  searchLimited?: boolean;
+};
+
+export type SourceLine = {
+  number: number;
+  content: string;
+  html?: string;
+};
+
+export type SourceFileData = {
+  path: string;
+  size: number;
+  truncated: boolean;
+  binary: boolean;
+  lines: SourceLine[];
+};

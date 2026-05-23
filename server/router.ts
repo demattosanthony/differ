@@ -4,6 +4,7 @@ import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
+import { getProjectFilesData, getSourceFile } from "./projectFiles";
 
 type RequestHandlerOptions = {
   repoRoot: string;
@@ -33,6 +34,22 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       if (!filePath) return new Response("Missing path", { status: 400 });
       const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
       const data = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare);
+      if (!data) return new Response("Not found", { status: 404 });
+      return Response.json(data);
+    }
+
+    if (url.pathname === "/api/project-files") {
+      const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
+      const data = getProjectFilesData(repoRoot, compare, url.searchParams.getAll("dir"), url.searchParams.get("q") ?? "");
+      return Response.json(data);
+    }
+
+    if (url.pathname === "/api/source-file") {
+      const filePath = url.searchParams.get("path");
+      const requestedTheme = (url.searchParams.get("theme") as ThemeId | null) ?? "vscode-dark";
+      if (!filePath) return new Response("Missing path", { status: 400 });
+      const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
+      const data = await getSourceFile(repoRoot, filePath, requestedTheme, compare);
       if (!data) return new Response("Not found", { status: 404 });
       return Response.json(data);
     }

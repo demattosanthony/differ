@@ -1,13 +1,22 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
-import type { CompareMode, CompareSpec, DiffData, DiffFile } from "../types";
+import type { CompareMode, CompareSpec, DiffData, DiffFile, ProjectFilesData } from "../types";
+
+export type SidebarScope = "changes" | "files";
 
 type SidebarProps = {
   data: DiffData | null;
+  projectData: ProjectFilesData | null;
   compareLabel: string;
   compare: CompareSpec;
+  scope: SidebarScope;
+  projectExpandedPaths: string[];
+  projectDirectories: string[];
+  onProjectExpandedPathsChange: (paths: string[]) => void;
+  onScopeChange: (scope: SidebarScope) => void;
   onCompareModeChange: (mode: CompareMode) => void;
   files: DiffFile[];
+  projectFiles: string[];
   activePath: string | null;
   query: string;
   onQueryChange: (value: string) => void;
@@ -28,37 +37,56 @@ const fileTreeStyle = {
   "--trees-border-color-override": "var(--tree-border)",
   "--trees-indent-guide-bg-override": "var(--tree-border)",
   "--trees-focus-ring-color-override": "var(--selection-border)",
-  "--trees-selected-bg-override": "var(--selection)",
+  "--trees-selected-bg-override": "color-mix(in srgb, var(--selection) 72%, transparent)",
   "--trees-selected-fg-override": "var(--title)",
   "--trees-selected-focused-border-color-override": "var(--selection-border)",
   "--trees-scrollbar-thumb-override": "var(--line)",
   "--trees-font-family-override": '"IBM Plex Sans", "Helvetica Neue", sans-serif',
   "--trees-font-size-override": "13px",
-  "--trees-item-padding-x-override": "8px",
+  "--trees-item-padding-x-override": "6px",
   "--trees-item-margin-x-override": "0px",
-  "--trees-border-radius-override": "6px",
+  "--trees-border-radius-override": "5px",
   "--trees-level-gap-override": "12px",
 } satisfies React.CSSProperties & Record<string, string>;
 
 export function Sidebar({
   data,
+  projectData,
   compareLabel,
   compare,
+  scope,
+  projectExpandedPaths,
+  projectDirectories,
+  onProjectExpandedPathsChange,
+  onScopeChange,
   onCompareModeChange,
   files,
+  projectFiles,
   activePath,
   query,
   onQueryChange,
   onSelectFile,
   onOpenSettings,
 }: SidebarProps) {
-  const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const changedPaths = useMemo(() => files.map((file) => file.path), [files]);
+  const paths = useMemo(() => {
+    if (scope === "files") return projectFiles;
+    const needle = query.trim().toLowerCase();
+    if (!needle) return changedPaths;
+    return changedPaths.filter((filePath) => filePath.toLowerCase().includes(needle));
+  }, [changedPaths, projectFiles, query, scope]);
+  const expandedPaths = useMemo(() => {
+    if (scope === "changes") return getDirectoryPaths(paths);
+    return query.trim() ? projectDirectories : projectExpandedPaths;
+  }, [paths, projectDirectories, projectExpandedPaths, query, scope]);
   const filesByPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
+  const pathSet = useMemo(() => new Set(paths), [paths]);
   const filesByPathRef = useRef(filesByPath);
   filesByPathRef.current = filesByPath;
   const { model } = useFileTree({
     flattenEmptyDirectories: true,
-    initialExpansion: "open",
+    initialExpansion: "closed",
+    initialExpandedPaths: expandedPaths,
     initialSelectedPaths: activePath ? [activePath] : [],
     paths,
     fileTreeSearchMode: "hide-non-matches",
@@ -119,8 +147,10 @@ export function Sidebar({
   const selectedPaths = useFileTreeSelection(model);
 
   useEffect(() => {
-    model.resetPaths(paths);
-  }, [model, paths]);
+    model.resetPaths(paths, {
+      initialExpandedPaths: expandedPaths,
+    });
+  }, [expandedPaths, model, paths]);
 
   useEffect(() => {
     model.setSearch(query.trim() || null);
@@ -132,13 +162,29 @@ export function Sidebar({
     if (!item || item.isDirectory()) return;
     item.select();
     model.scrollToPath(activePath, { focus: false, offset: "nearest" });
-  }, [activePath, model]);
+  }, [activePath, model, paths]);
 
   useEffect(() => {
     const selectedPath = selectedPaths[0];
-    if (!selectedPath || !filesByPath.has(selectedPath)) return;
+    if (!selectedPath || !pathSet.has(selectedPath)) return;
+    if (scope === "files" && selectedPath.endsWith("/")) return;
     onSelectFile(selectedPath);
-  }, [filesByPath, onSelectFile, selectedPaths]);
+  }, [onSelectFile, pathSet, scope, selectedPaths]);
+
+  useEffect(() => {
+    if (scope !== "files") return;
+    if (query.trim()) return;
+    const syncExpandedPaths = () => {
+      const expanded = projectDirectories.filter((dir) => {
+        const item = model.getItem(dir);
+        return item?.isDirectory() && "isExpanded" in item ? item.isExpanded() : false;
+      });
+      onProjectExpandedPathsChange(expanded);
+    };
+    return model.subscribe(syncExpandedPaths);
+  }, [model, onProjectExpandedPathsChange, projectDirectories, query, scope]);
+
+  const emptyMessage = getEmptyMessage({ data, files, paths, projectData, projectFiles, scope });
 
   return (
     <aside className="filelist">
@@ -175,18 +221,36 @@ export function Sidebar({
           <span className="add">+{data?.summary.additions ?? 0}</span>
           <span className="del">-{data?.summary.deletions ?? 0}</span>
         </div>
+        <div className="scope-tabs" role="tablist" aria-label="Sidebar scope">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "changes"}
+            className={`tab ${scope === "changes" ? "active" : ""}`}
+            onClick={() => onScopeChange("changes")}
+          >
+            <span>Changes</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "files"}
+            className={`tab ${scope === "files" ? "active" : ""}`}
+            onClick={() => onScopeChange("files")}
+          >
+            <span>Files</span>
+          </button>
+        </div>
         <input
           className="search"
-          placeholder="Filter files"
+          placeholder={scope === "changes" ? "Filter changes" : "Filter files"}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
         />
       </div>
       <div className="sidebar-tree">
-        {files.length === 0 ? (
-          <div className="empty centered">
-            {data ? (data.files.length ? "No matching files" : "No changes") : "Loading changes…"}
-          </div>
+        {paths.length === 0 ? (
+          <div className="empty centered">{emptyMessage}</div>
         ) : (
           <FileTree
             className="diff-file-tree"
@@ -207,4 +271,45 @@ export function Sidebar({
       </div>
     </aside>
   );
+}
+
+function getEmptyMessage({
+  data,
+  files,
+  paths,
+  projectData,
+  projectFiles,
+  scope,
+}: {
+  data: DiffData | null;
+  files: DiffFile[];
+  paths: string[];
+  projectData: ProjectFilesData | null;
+  projectFiles: string[];
+  scope: SidebarScope;
+}) {
+  if (scope === "changes") {
+    if (!data) return "Loading changes…";
+    if (!data.files.length) return "No changes";
+    if (!files.length || !paths.length) return "No matching files";
+    return "";
+  }
+
+  if (!projectData) return "Loading files…";
+  if (!projectFiles.length) return "No files";
+  if (!paths.length) return "No matching files";
+  return "";
+}
+
+function getDirectoryPaths(paths: string[]) {
+  const dirs = new Set<string>();
+  for (const filePath of paths) {
+    const normalized = filePath.endsWith("/") ? filePath.slice(0, -1) : filePath;
+    const segments = normalized.split("/");
+    const limit = filePath.endsWith("/") ? segments.length + 1 : segments.length;
+    for (let index = 1; index < limit; index += 1) {
+      dirs.add(`${segments.slice(0, index).join("/")}/`);
+    }
+  }
+  return Array.from(dirs);
 }

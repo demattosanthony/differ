@@ -7,11 +7,29 @@
   <img src= "https://github.com/user-attachments/assets/1fc3efcf-3b23-46c3-ab67-2ed88c740cd9" alt="differ_demo" />
 </p>
 
-## Install
+## Install from release
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/demattosanthony/differ/main/install.sh | bash
 ```
+
+## Install from source
+
+Requires [Bun](https://bun.sh/) and Git.
+
+```sh
+git clone https://github.com/demattosanthony/differ.git
+cd differ
+bun install
+bun run build
+
+rm -rf ~/.local/share/differ
+mkdir -p ~/.local/share/differ ~/.local/bin
+cp -R dist/. ~/.local/share/differ/
+ln -sf ~/.local/share/differ/differ ~/.local/bin/differ
+```
+
+If `differ` is not found after install, add `~/.local/bin` to your `PATH`.
 
 ## Usage
 

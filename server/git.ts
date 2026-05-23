@@ -28,7 +28,7 @@ const getDefaultBase = (repoRoot: string) => {
   return "HEAD";
 };
 
-const getRangeParams = (repoRoot: string, compare: CompareSpec) => {
+export const getRangeParams = (repoRoot: string, compare: CompareSpec) => {
   if (compare.mode === "range") {
     return {
       base: compare.base ?? getDefaultBase(repoRoot),

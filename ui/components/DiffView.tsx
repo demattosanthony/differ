@@ -11,6 +11,7 @@ type DiffViewProps = {
   showFullFile: boolean;
   onToggleFullFile: (value: boolean) => void;
   fileStatus: "idle" | "loading" | "error";
+  onShowInFiles: () => void;
 };
 
 type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null };
@@ -104,7 +105,7 @@ const ModeToggle = ({ active, onToggle }: { active: boolean; onToggle: (value: b
       className={`tab ${active ? "active" : ""}`}
       onClick={() => onToggle(true)}
     >
-      File
+      Full
     </button>
   </div>
 );
@@ -117,19 +118,12 @@ export function DiffView({
   showFullFile,
   onToggleFullFile,
   fileStatus,
+  onShowInFiles,
 }: DiffViewProps) {
   if (fileStatus !== "idle") {
-    const message =
-      fileStatus === "loading"
-        ? showFullFile
-          ? "Loading full context…"
-          : "Loading diff…"
-        : showFullFile
-          ? "Unable to load full context."
-          : "Unable to load diff.";
     return (
       <section className="diff-view">
-        <div className="empty centered">{message}</div>
+        <div className="empty centered">{getStatusMessage(fileStatus, showFullFile)}</div>
       </section>
     );
   }
@@ -153,6 +147,9 @@ export function DiffView({
               <span className="del">-{file.deletions}</span>
             </span>
             <ModeToggle active={showFullFile} onToggle={onToggleFullFile} />
+            <button type="button" className="tab" onClick={onShowInFiles}>
+              Files
+            </button>
             <ViewTabs viewMode={viewMode} onChange={onViewModeChange} />
           </div>
         </div>
@@ -223,4 +220,9 @@ export function DiffView({
       </div>
     </section>
   );
+}
+
+function getStatusMessage(status: "loading" | "error", showFullFile: boolean) {
+  if (status === "loading") return showFullFile ? "Loading full context…" : "Loading diff…";
+  return showFullFile ? "Unable to load full context." : "Unable to load diff.";
 }
