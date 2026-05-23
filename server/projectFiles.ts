@@ -1,5 +1,5 @@
 import path from "path";
-import { readdirSync, statSync } from "fs";
+import { statSync } from "fs";
 import { createHash } from "crypto";
 import type { CompareSpec, ProjectFilesData, SourceFileData } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
@@ -92,11 +92,6 @@ function listProjectTreePaths(repoRoot: string, compare: CompareSpec, requestedD
       paths.add(child.path);
       if (child.kind !== "directory") continue;
       directories.add(child.path);
-
-      const firstChild = listDirectoryChildren(repoRoot, compare, stripDirSlash(child.path))[0];
-      if (!firstChild) continue;
-      paths.add(firstChild.path);
-      if (firstChild.kind === "directory") directories.add(firstChild.path);
     }
   }
 
@@ -134,29 +129,30 @@ function listDirectoryChildren(repoRoot: string, compare: CompareSpec, dir: stri
 }
 
 function listWorkingDirectoryChildren(repoRoot: string, dir: string) {
-  const resolved = path.resolve(repoRoot, dir || ".");
-  if (!isInsideRepoOrRoot(repoRoot, resolved)) return [];
+  const normalizedDir = normalizeDirPath(dir);
+  const prefix = normalizedDir ? `${normalizedDir}/` : "";
+  const deleted = new Set(listDeletedWorkingFiles(repoRoot, prefix));
+  const entries = new Map<string, TreeEntry>();
 
-  let entries;
-  try {
-    entries = readdirSync(resolved, { withFileTypes: true });
-  } catch {
-    return [];
+  for (const filePath of listWorkingFilesUnder(repoRoot, prefix)) {
+    if (deleted.has(filePath)) continue;
+    const normalized = normalizeRepoPath(filePath);
+    if (!normalized || prefix && !normalized.startsWith(prefix)) continue;
+
+    const relative = prefix ? normalized.slice(prefix.length) : normalized;
+    if (!relative) continue;
+
+    const slashIndex = relative.indexOf("/");
+    if (slashIndex === -1) {
+      entries.set(normalized, { kind: "file", path: normalized });
+      continue;
+    }
+
+    const childPath = `${prefix}${relative.slice(0, slashIndex)}/`;
+    entries.set(childPath, { kind: "directory", path: childPath });
   }
 
-  return entries
-    .map((entry) => {
-      const entryPath = dir ? `${dir}/${entry.name}` : entry.name;
-      const normalized = normalizeRepoPath(entryPath);
-      if (!normalized || (!entry.isFile() && !entry.isDirectory())) return null;
-      if (!isGitVisible(repoRoot, normalized)) return null;
-      return {
-        kind: entry.isDirectory() ? "directory" : "file",
-        path: entry.isDirectory() ? `${normalized}/` : normalized,
-      };
-    })
-    .filter((entry): entry is TreeEntry => Boolean(entry))
-    .sort(compareTreeEntries);
+  return Array.from(entries.values()).sort(compareTreeEntries);
 }
 
 function listRangeDirectoryChildren(repoRoot: string, compare: CompareSpec, dir: string) {
@@ -180,12 +176,22 @@ function parseLsTreeEntry(line: string) {
 }
 
 function listWorkingFiles(repoRoot: string) {
-  const output = runGit(repoRoot, ["ls-files", "-co", "--exclude-standard", "-z"]);
-  const deletedOutput = runGit(repoRoot, ["ls-files", "-d", "-z"]);
-  const deleted = new Set(parseNullDelimited(deletedOutput));
-  return Array.from(new Set(parseNullDelimited(output)))
+  const deleted = new Set(listDeletedWorkingFiles(repoRoot, ""));
+  return Array.from(new Set(listWorkingFilesUnder(repoRoot, "")))
     .filter((filePath) => !deleted.has(filePath) && normalizeRepoPath(filePath))
     .sort(comparePaths);
+}
+
+function listWorkingFilesUnder(repoRoot: string, prefix: string) {
+  const args = ["ls-files", "-co", "--exclude-standard", "-z"];
+  if (prefix) args.push("--", prefix);
+  return parseNullDelimited(runGit(repoRoot, args));
+}
+
+function listDeletedWorkingFiles(repoRoot: string, prefix: string) {
+  const args = ["ls-files", "-d", "-z"];
+  if (prefix) args.push("--", prefix);
+  return parseNullDelimited(runGit(repoRoot, args));
 }
 
 function listRangeFiles(repoRoot: string, compare: CompareSpec) {
@@ -290,20 +296,6 @@ function getAncestorDirs(filePath: string) {
 function isInsideRepo(repoRoot: string, resolvedPath: string) {
   const relative = path.relative(repoRoot, resolvedPath);
   return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-function isInsideRepoOrRoot(repoRoot: string, resolvedPath: string) {
-  return resolvedPath === repoRoot || isInsideRepo(repoRoot, resolvedPath);
-}
-
-function isGitVisible(repoRoot: string, filePath: string) {
-  if (runGit(repoRoot, ["ls-files", "--error-unmatch", "--", filePath]).trim()) return true;
-  const ignored = Bun.spawnSync(["git", "check-ignore", "-q", "--", filePath], {
-    cwd: repoRoot,
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  return ignored.exitCode !== 0;
 }
 
 function parseNullDelimited(output: string) {

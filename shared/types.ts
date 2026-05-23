@@ -4,9 +4,19 @@ export type DiffHunk = { header: string; lines: DiffLine[] };
 
 export type DiffFile = {
   path: string;
+  change?: ChangeSectionId;
   additions: number;
   deletions: number;
   hunks: DiffHunk[];
+};
+
+export type ChangeSectionId = "staged" | "unstaged";
+
+export type DiffSection = {
+  id: ChangeSectionId;
+  title: string;
+  summary: { files: number; additions: number; deletions: number };
+  files: DiffFile[];
 };
 
 export type CompareMode = "working" | "range";
@@ -23,6 +33,7 @@ export type DiffData = {
   revision: string;
   compare: CompareSpec;
   files: DiffFile[];
+  sections?: DiffSection[];
 };
 
 export type ProjectFilesData = {

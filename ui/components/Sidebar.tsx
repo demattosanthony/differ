@@ -1,26 +1,28 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { FileTree, useFileTree, useFileTreeSelection } from "@pierre/trees/react";
-import type { CompareMode, CompareSpec, DiffData, DiffFile, ProjectFilesData } from "../types";
+import { FileTree, useFileTree } from "@pierre/trees/react";
+import type { ChangeSectionId, DiffData, DiffFile, DiffSection, ProjectFilesData } from "../types";
 
 export type SidebarScope = "changes" | "files";
+export type SidebarActivity = "files" | "changes" | "review";
 
 type SidebarProps = {
   data: DiffData | null;
   projectData: ProjectFilesData | null;
   compareLabel: string;
-  compare: CompareSpec;
   scope: SidebarScope;
+  activity: SidebarActivity;
   projectExpandedPaths: string[];
   projectDirectories: string[];
   onProjectExpandedPathsChange: (paths: string[]) => void;
-  onScopeChange: (scope: SidebarScope) => void;
-  onCompareModeChange: (mode: CompareMode) => void;
+  onCollapseProjectFolders: () => void;
+  onActivityChange: (activity: SidebarActivity) => void;
   files: DiffFile[];
   projectFiles: string[];
   activePath: string | null;
+  activeChange?: ChangeSectionId | null;
   query: string;
   onQueryChange: (value: string) => void;
-  onSelectFile: (path: string) => void;
+  onSelectFile: (path: string, change?: ChangeSectionId) => void;
   onOpenSettings: () => void;
 };
 
@@ -49,20 +51,69 @@ const fileTreeStyle = {
   "--trees-level-gap-override": "12px",
 } satisfies React.CSSProperties & Record<string, string>;
 
+const fileTreeUnsafeCSS = `
+  :host {
+    color: var(--trees-fg) !important;
+    background: var(--trees-bg) !important;
+  }
+
+  [data-file-tree-virtualized-wrapper="true"],
+  [data-file-tree-virtualized-root="true"],
+  [data-file-tree-virtualized-scroll="true"],
+  [data-file-tree-virtualized-list="true"],
+  [data-file-tree-virtualized-sticky="true"],
+  [role="tree"] {
+    background: var(--trees-bg) !important;
+  }
+
+  [data-type="item"] {
+    color: var(--trees-fg);
+    background: var(--trees-bg) !important;
+  }
+
+  [data-type="item"]:hover:not([data-item-selected="true"]) {
+    background: var(--trees-bg-muted) !important;
+  }
+
+  [data-item-selected="true"] {
+    background: var(--trees-selected-bg) !important;
+  }
+
+  [data-item-type="folder"] > [data-item-section="icon"] {
+    color: var(--trees-accent);
+  }
+
+  [data-item-type="folder"] > [data-item-section="content"] {
+    color: var(--trees-fg);
+    font-weight: 500;
+  }
+
+  [data-item-section="decoration"] {
+    color: var(--trees-fg-muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  [data-item-selected="true"] [data-item-section="decoration"] {
+    color: var(--trees-selected-fg);
+  }
+`;
+
 export function Sidebar({
   data,
   projectData,
   compareLabel,
-  compare,
   scope,
+  activity,
   projectExpandedPaths,
   projectDirectories,
   onProjectExpandedPathsChange,
-  onScopeChange,
-  onCompareModeChange,
+  onCollapseProjectFolders,
+  onActivityChange,
   files,
   projectFiles,
   activePath,
+  activeChange,
   query,
   onQueryChange,
   onSelectFile,
@@ -75,101 +126,81 @@ export function Sidebar({
     if (!needle) return changedPaths;
     return changedPaths.filter((filePath) => filePath.toLowerCase().includes(needle));
   }, [changedPaths, projectFiles, query, scope]);
+  const isSectionedChanges = scope === "changes" && activity === "changes" && Boolean(data?.sections);
+  const filteredSections = useMemo(() => {
+    if (!isSectionedChanges) return [];
+    return (data?.sections ?? []).map((section) => ({
+      ...section,
+      files: filterFiles(section.files, query),
+    }));
+  }, [data?.sections, isSectionedChanges, query]);
+  const treePaths = useMemo(() => (isSectionedChanges ? [] : paths), [isSectionedChanges, paths]);
   const expandedPaths = useMemo(() => {
-    if (scope === "changes") return getDirectoryPaths(paths);
+    if (isSectionedChanges) return [];
+    if (scope === "changes") return getDirectoryPaths(treePaths);
     return query.trim() ? projectDirectories : projectExpandedPaths;
-  }, [paths, projectDirectories, projectExpandedPaths, query, scope]);
+  }, [isSectionedChanges, projectDirectories, projectExpandedPaths, query, scope, treePaths]);
   const filesByPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
-  const pathSet = useMemo(() => new Set(paths), [paths]);
+  const pathSet = useMemo(() => new Set(treePaths), [treePaths]);
+  const pathSetRef = useRef(pathSet);
   const filesByPathRef = useRef(filesByPath);
+  const scopeRef = useRef(scope);
+  const onSelectFileRef = useRef(onSelectFile);
+  const syncingSelectionRef = useRef(false);
+  pathSetRef.current = pathSet;
   filesByPathRef.current = filesByPath;
+  scopeRef.current = scope;
+  onSelectFileRef.current = onSelectFile;
   const { model } = useFileTree({
-    flattenEmptyDirectories: true,
+    flattenEmptyDirectories: false,
     initialExpansion: "closed",
     initialExpandedPaths: expandedPaths,
     initialSelectedPaths: activePath ? [activePath] : [],
-    paths,
+    paths: treePaths,
     fileTreeSearchMode: "hide-non-matches",
-    unsafeCSS: `
-      :host {
-        color: var(--trees-fg) !important;
-        background: var(--trees-bg) !important;
-      }
-
-      [data-file-tree-virtualized-wrapper="true"],
-      [data-file-tree-virtualized-root="true"],
-      [data-file-tree-virtualized-scroll="true"],
-      [data-file-tree-virtualized-list="true"],
-      [data-file-tree-virtualized-sticky="true"],
-      [role="tree"] {
-        background: var(--trees-bg) !important;
-      }
-
-      [data-type="item"] {
-        color: var(--trees-fg);
-        background: var(--trees-bg) !important;
-      }
-
-      [data-type="item"]:hover:not([data-item-selected="true"]) {
-        background: var(--trees-bg-muted) !important;
-      }
-
-      [data-item-selected="true"] {
-        background: var(--trees-selected-bg) !important;
-      }
-
-      [data-item-type="folder"] > [data-item-section="icon"] {
-        color: var(--trees-accent);
-      }
-
-      [data-item-type="folder"] > [data-item-section="content"] {
-        color: var(--trees-fg);
-        font-weight: 500;
-      }
-
-      [data-item-section="decoration"] {
-        color: var(--trees-fg-muted);
-        font-size: 11px;
-        white-space: nowrap;
-      }
-
-      [data-item-selected="true"] [data-item-section="decoration"] {
-        color: var(--trees-selected-fg);
-      }
-    `,
+    unsafeCSS: fileTreeUnsafeCSS,
     renderRowDecoration: ({ item }) => {
+      if (scopeRef.current === "files") return null;
       if (item.kind !== "file") return null;
       const file = filesByPathRef.current.get(item.path);
       if (!file) return null;
       return { text: `+${file.additions} -${file.deletions}` };
     },
+    onSelectionChange: (selectedPaths) => {
+      if (syncingSelectionRef.current) return;
+      const selectedPath = selectedPaths[0];
+      if (!selectedPath || !pathSetRef.current.has(selectedPath)) return;
+      if (scopeRef.current === "files" && selectedPath.endsWith("/")) return;
+      onSelectFileRef.current(selectedPath);
+    },
   });
-  const selectedPaths = useFileTreeSelection(model);
 
   useEffect(() => {
-    model.resetPaths(paths, {
+    model.resetPaths(treePaths, {
       initialExpandedPaths: expandedPaths,
     });
-  }, [expandedPaths, model, paths]);
+  }, [expandedPaths, model, treePaths]);
 
   useEffect(() => {
     model.setSearch(query.trim() || null);
   }, [model, query]);
 
   useEffect(() => {
-    if (!activePath) return;
-    const item = model.getItem(activePath);
-    if (!item || item.isDirectory()) return;
-    item.select();
-    model.scrollToPath(activePath, { focus: false, offset: "nearest" });
-  }, [activePath, model, paths]);
-
-  useEffect(() => {
-    const selectedPath = selectedPaths[0];
-    if (!selectedPath || !pathSet.has(selectedPath)) return;
-    if (scope === "files" && selectedPath.endsWith("/")) return;
-    onSelectFile(selectedPath);
-  }, [onSelectFile, pathSet, scope, selectedPaths]);
+    if (isSectionedChanges) return;
+    syncingSelectionRef.current = true;
+    try {
+      for (const selectedPath of model.getSelectedPaths()) {
+        if (selectedPath !== activePath) model.getItem(selectedPath)?.deselect();
+      }
+      if (!activePath) return;
+      const item = model.getItem(activePath);
+      if (!item || item.isDirectory()) return;
+      if (!item.isSelected()) item.select();
+      model.scrollToPath(activePath, { focus: false, offset: "nearest" });
+    } finally {
+      syncingSelectionRef.current = false;
+    }
+  }, [activePath, isSectionedChanges, model, treePaths]);
 
   useEffect(() => {
     if (scope !== "files") return;
@@ -184,96 +215,319 @@ export function Sidebar({
     return model.subscribe(syncExpandedPaths);
   }, [model, onProjectExpandedPathsChange, projectDirectories, query, scope]);
 
-  const emptyMessage = getEmptyMessage({ data, files, paths, projectData, projectFiles, scope });
+  const emptyMessage = getEmptyMessage({ activity, data, files, paths, projectData, projectFiles, scope });
 
   return (
-    <aside className="filelist">
-      <div className="sidebar-head">
-        <div className="sidebar-top">
-          <div className="repo-name">{data?.repo.name ?? "Loading"}</div>
-        </div>
-        <div className="compare-context">
-          <span className="compare-label">Compare</span>
-          <span className="compare-value">{compareLabel}</span>
-        </div>
-        <div className="compare-tabs" role="tablist" aria-label="Compare mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={compare.mode === "working"}
-            className={`tab ${compare.mode === "working" ? "active" : ""}`}
-            onClick={() => onCompareModeChange("working")}
-          >
-            Working
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={compare.mode === "range"}
-            className={`tab ${compare.mode === "range" ? "active" : ""}`}
-            onClick={() => onCompareModeChange("range")}
-          >
-            Branch
-          </button>
-        </div>
-        <div className="summary">
-          <span>{data?.summary.files ?? 0} files</span>
-          <span className="add">+{data?.summary.additions ?? 0}</span>
-          <span className="del">-{data?.summary.deletions ?? 0}</span>
-        </div>
-        <div className="scope-tabs" role="tablist" aria-label="Sidebar scope">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={scope === "changes"}
-            className={`tab ${scope === "changes" ? "active" : ""}`}
-            onClick={() => onScopeChange("changes")}
-          >
-            <span>Changes</span>
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={scope === "files"}
-            className={`tab ${scope === "files" ? "active" : ""}`}
-            onClick={() => onScopeChange("files")}
-          >
-            <span>Files</span>
-          </button>
-        </div>
-        <input
-          className="search"
-          placeholder={scope === "changes" ? "Filter changes" : "Filter files"}
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-      </div>
-      <div className="sidebar-tree">
-        {paths.length === 0 ? (
-          <div className="empty centered">{emptyMessage}</div>
-        ) : (
-          <FileTree
-            className="diff-file-tree"
-            model={model}
-            style={fileTreeStyle}
+    <div className="sidebar-shell">
+      <aside className="activity-rail" aria-label="Primary views">
+        <div className="rail-logo" aria-hidden="true">D</div>
+        <nav className="activity-nav" aria-label="Primary views">
+          <ActivityButton
+            activity="files"
+            active={activity === "files"}
+            label="Files"
+            onClick={onActivityChange}
           />
-        )}
-      </div>
-      <div className="sidebar-footer">
-        <button type="button" className="settings-button" onClick={onOpenSettings}>
-          <span className="settings-icon" aria-hidden="true">
-            <svg viewBox="0 0 20 20" className="icon">
-              <path d="M8.6 2h2.8l.4 1.8a5.9 5.9 0 0 1 1.6.9l1.7-.7 2 2-1 1.6c.3.6.6 1.2.7 1.8l1.8.4v2.8l-1.8.4a5.9 5.9 0 0 1-.7 1.8l1 1.6-2 2-1.7-.7a5.9 5.9 0 0 1-1.6.9l-.4 1.8H8.6l-.4-1.8a5.9 5.9 0 0 1-1.6-.9l-1.7.7-2-2 1-1.6a5.9 5.9 0 0 1-.7-1.8l-1.8-.4V9.2l1.8-.4c.1-.6.4-1.2.7-1.8l-1-1.6 2-2 1.7.7c.5-.4 1-.7 1.6-.9L8.6 2zm1.4 5.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2z" />
-            </svg>
-          </span>
-          Settings
+          <ActivityButton
+            activity="changes"
+            active={activity === "changes"}
+            label="Working Changes"
+            onClick={onActivityChange}
+          />
+          <ActivityButton
+            activity="review"
+            active={activity === "review"}
+            label="Branch Review"
+            onClick={onActivityChange}
+          />
+        </nav>
+        <button type="button" className="activity-button rail-settings" aria-label="Settings" onClick={onOpenSettings}>
+          <ActivityIcon activity="settings" />
         </button>
-      </div>
-    </aside>
+      </aside>
+
+      <aside className="filelist">
+        <div className="sidebar-head">
+          <div className="sidebar-heading">
+            <div className="sidebar-title-row">
+              <div className="sidebar-title">{getActivityTitle(activity)}</div>
+              {scope === "files" ? (
+                <button
+                  type="button"
+                  className="sidebar-icon-button"
+                  aria-label="Collapse all folders"
+                  title="Collapse all folders"
+                  disabled={projectExpandedPaths.length === 0}
+                  onClick={onCollapseProjectFolders}
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M4 6.5h12" />
+                    <path d="M6.5 10h7" />
+                    <path d="M8.5 13.5h3" />
+                    <path d="M7 3.5 10 1l3 2.5" />
+                  </svg>
+                </button>
+              ) : null}
+            </div>
+            <div className="sidebar-context">
+              <span>{data?.repo.name ?? "Loading"}</span>
+              <span className="context-separator">/</span>
+              <span className="compare-value">{getActivityContext(activity, compareLabel)}</span>
+            </div>
+          </div>
+          {scope === "changes" ? (
+            <div className="summary">
+              <span>{data?.summary.files ?? 0} {activity === "changes" ? "changes" : "files"}</span>
+              <span className="add">+{data?.summary.additions ?? 0}</span>
+              <span className="del">-{data?.summary.deletions ?? 0}</span>
+            </div>
+          ) : null}
+          <input
+            className="search"
+            placeholder={getSearchPlaceholder(activity)}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+        </div>
+        <div className="sidebar-tree">
+          {isSectionedChanges ? (
+            <ChangeSections
+              sections={filteredSections}
+              activePath={activePath}
+              activeChange={activeChange}
+              query={query}
+              onSelectFile={onSelectFile}
+            />
+          ) : paths.length === 0 ? (
+            <div className="empty centered">{emptyMessage}</div>
+          ) : (
+            <FileTree
+              className="diff-file-tree"
+              model={model}
+              style={fileTreeStyle}
+            />
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
+function ActivityButton({
+  activity,
+  active,
+  label,
+  onClick,
+}: {
+  activity: SidebarActivity;
+  active: boolean;
+  label: string;
+  onClick: (activity: SidebarActivity) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`activity-button ${active ? "active" : ""}`}
+      aria-label={label}
+      aria-current={active ? "page" : undefined}
+      onClick={() => onClick(activity)}
+    >
+      <ActivityIcon activity={activity} />
+    </button>
+  );
+}
+
+function ActivityIcon({ activity }: { activity: SidebarActivity | "settings" }) {
+  if (activity === "files") {
+    return (
+      <svg viewBox="0 0 24 24" className="activity-icon" aria-hidden="true">
+        <path d="M4 5.5h5l1.8 2H20v11H4z" />
+        <path d="M4 9h16" />
+      </svg>
+    );
+  }
+
+  if (activity === "changes") {
+    return (
+      <svg viewBox="0 0 24 24" className="activity-icon" aria-hidden="true">
+        <path d="M6 3.5h8l4 4v13H6z" />
+        <path d="M14 3.5v4h4" />
+        <path d="M9 11h5" />
+        <path d="M11.5 8.5v5" />
+        <path d="M9 16.5h6" />
+      </svg>
+    );
+  }
+
+  if (activity === "review") {
+    return (
+      <svg viewBox="0 0 24 24" className="activity-icon" aria-hidden="true">
+        <circle cx="7" cy="6" r="2" />
+        <circle cx="7" cy="18" r="2" />
+        <circle cx="17" cy="12" r="2" />
+        <path d="M7 8v8" />
+        <path d="M7 10h3.5a4 4 0 0 1 4 4v2" />
+        <path d="M14.5 12H17" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className="activity-icon" aria-hidden="true">
+      <path d="M10.2 4h3.6l.6 2.1a7.3 7.3 0 0 1 1.5.9l2.1-.7 1.8 3.1-1.6 1.4a7 7 0 0 1 0 1.8l1.6 1.4-1.8 3.1-2.1-.7a7.3 7.3 0 0 1-1.5.9l-.6 2.1h-3.6l-.6-2.1a7.3 7.3 0 0 1-1.5-.9l-2.1.7-1.8-3.1 1.6-1.4a7 7 0 0 1 0-1.8L4.2 9.4 6 6.3l2.1.7a7.3 7.3 0 0 1 1.5-.9z" />
+      <circle cx="12" cy="12" r="2.6" />
+    </svg>
+  );
+}
+
+function ChangeSections({
+  sections,
+  activePath,
+  activeChange,
+  query,
+  onSelectFile,
+}: {
+  sections: DiffSection[];
+  activePath: string | null;
+  activeChange?: ChangeSectionId | null;
+  query: string;
+  onSelectFile: (path: string, change?: ChangeSectionId) => void;
+}) {
+  if (!sections.some((section) => section.summary.files > 0)) {
+    return <div className="empty centered">No changes</div>;
+  }
+
+  return (
+    <div className="change-sections">
+      {sections.map((section) => (
+        <ChangeSectionTree
+          key={section.id}
+          section={section}
+          activePath={activeChange === section.id ? activePath : null}
+          query={query}
+          onSelectFile={onSelectFile}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ChangeSectionTree({
+  section,
+  activePath,
+  query,
+  onSelectFile,
+}: {
+  section: DiffSection;
+  activePath: string | null;
+  query: string;
+  onSelectFile: (path: string, change?: ChangeSectionId) => void;
+}) {
+  const paths = useMemo(() => section.files.map((file) => file.path), [section.files]);
+  const expandedPaths = useMemo(() => getDirectoryPaths(paths), [paths]);
+  const treeHeight = Math.max(30, Math.min(360, (paths.length + expandedPaths.length) * 30));
+  const pathSet = useMemo(() => new Set(paths), [paths]);
+  const filesByPath = useMemo(() => new Map(section.files.map((file) => [file.path, file])), [section.files]);
+  const pathSetRef = useRef(pathSet);
+  const filesByPathRef = useRef(filesByPath);
+  const onSelectFileRef = useRef(onSelectFile);
+  const syncingSelectionRef = useRef(false);
+  pathSetRef.current = pathSet;
+  filesByPathRef.current = filesByPath;
+  onSelectFileRef.current = onSelectFile;
+  const { model } = useFileTree({
+    flattenEmptyDirectories: true,
+    initialExpansion: "closed",
+    initialExpandedPaths: expandedPaths,
+    initialSelectedPaths: activePath ? [activePath] : [],
+    paths,
+    fileTreeSearchMode: "hide-non-matches",
+    unsafeCSS: fileTreeUnsafeCSS,
+    renderRowDecoration: ({ item }) => {
+      if (item.kind !== "file") return null;
+      const file = filesByPathRef.current.get(item.path);
+      if (!file) return null;
+      return { text: `+${file.additions} -${file.deletions}` };
+    },
+    onSelectionChange: (selectedPaths) => {
+      if (syncingSelectionRef.current) return;
+      const selectedPath = selectedPaths[0];
+      if (!selectedPath || !pathSetRef.current.has(selectedPath)) return;
+      onSelectFileRef.current(selectedPath, section.id);
+    },
+  });
+
+  useEffect(() => {
+    model.resetPaths(paths, { initialExpandedPaths: expandedPaths });
+  }, [expandedPaths, model, paths]);
+
+  useEffect(() => {
+    model.setSearch(query.trim() || null);
+  }, [model, query]);
+
+  useEffect(() => {
+    syncingSelectionRef.current = true;
+    try {
+      for (const selectedPath of model.getSelectedPaths()) {
+        if (selectedPath !== activePath) model.getItem(selectedPath)?.deselect();
+      }
+      if (!activePath) return;
+      const item = model.getItem(activePath);
+      if (!item || item.isDirectory()) return;
+      if (!item.isSelected()) item.select();
+      model.scrollToPath(activePath, { focus: false, offset: "nearest" });
+    } finally {
+      syncingSelectionRef.current = false;
+    }
+  }, [activePath, model, paths]);
+
+  return (
+    <section className="change-section">
+      <div className="change-section-header">
+        <span>{section.title}</span>
+        <span className="change-section-summary">
+          {section.summary.files}
+          <span className="add">+{section.summary.additions}</span>
+          <span className="del">-{section.summary.deletions}</span>
+        </span>
+      </div>
+      {paths.length === 0 ? (
+        <div className="section-empty">{query.trim() ? "No matching files" : "No changes"}</div>
+      ) : (
+        <div className="change-section-tree">
+          <FileTree className="diff-file-tree" model={model} style={{ ...fileTreeStyle, height: `${treeHeight}px` }} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function getActivityTitle(activity: SidebarActivity) {
+  if (activity === "files") return "Files";
+  if (activity === "review") return "Branch Review";
+  return "Changes";
+}
+
+function getActivityContext(activity: SidebarActivity, compareLabel: string) {
+  if (activity === "files") return "Project";
+  if (activity === "review") return compareLabel;
+  return "Working Tree";
+}
+
+function getSearchPlaceholder(activity: SidebarActivity) {
+  if (activity === "files") return "Filter files";
+  if (activity === "review") return "Filter review";
+  return "Filter changes";
+}
+
+function filterFiles(files: DiffFile[], query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return files;
+  return files.filter((file) => file.path.toLowerCase().includes(needle));
+}
+
 function getEmptyMessage({
+  activity,
   data,
   files,
   paths,
@@ -281,6 +535,7 @@ function getEmptyMessage({
   projectFiles,
   scope,
 }: {
+  activity: SidebarActivity;
   data: DiffData | null;
   files: DiffFile[];
   paths: string[];
@@ -290,7 +545,7 @@ function getEmptyMessage({
 }) {
   if (scope === "changes") {
     if (!data) return "Loading changes…";
-    if (!data.files.length) return "No changes";
+    if (!data.files.length) return activity === "review" ? "No review changes" : "No changes";
     if (!files.length || !paths.length) return "No matching files";
     return "";
   }

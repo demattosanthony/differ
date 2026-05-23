@@ -1,5 +1,5 @@
 import path from "path";
-import type { CompareSpec } from "../shared/types";
+import type { ChangeSectionId, CompareSpec } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
@@ -33,7 +33,7 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       const full = url.searchParams.get("full") === "1";
       if (!filePath) return new Response("Missing path", { status: 400 });
       const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
-      const data = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare);
+      const data = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare, getChangeFromRequest(url));
       if (!data) return new Response("Not found", { status: 404 });
       return Response.json(data);
     }
@@ -66,6 +66,11 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
     }
     return new Response(file);
   };
+}
+
+function getChangeFromRequest(url: URL): ChangeSectionId | undefined {
+  const change = url.searchParams.get("change");
+  return change === "staged" || change === "unstaged" ? change : undefined;
 }
 
 function getCompareFromRequest(url: URL, repoRoot: string, fallback: CompareSpec): CompareSpec {

@@ -34,7 +34,7 @@ export function useProjectFiles({ compare, expandedDirs, query, refreshToken }: 
     fetch(`/api/project-files?${params.toString()}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((json) => {
-        setData(json);
+        setData((previous) => (previous?.revision === json.revision ? previous : json));
         setStatus("idle");
       })
       .catch((error) => {

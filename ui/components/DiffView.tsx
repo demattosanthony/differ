@@ -1,4 +1,4 @@
-import type { DiffFile, DiffLine } from "../types";
+import type { ChangeSectionId, DiffFile, DiffLine } from "../types";
 import type { DiffViewMode } from "../themes";
 
 type SplitCellType = "add" | "del" | "context" | "empty";
@@ -12,6 +12,7 @@ type DiffViewProps = {
   onToggleFullFile: (value: boolean) => void;
   fileStatus: "idle" | "loading" | "error";
   onShowInFiles: () => void;
+  change?: ChangeSectionId | null;
 };
 
 type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null };
@@ -119,6 +120,7 @@ export function DiffView({
   onToggleFullFile,
   fileStatus,
   onShowInFiles,
+  change,
 }: DiffViewProps) {
   if (fileStatus !== "idle") {
     return (
@@ -140,7 +142,10 @@ export function DiffView({
     <section className="diff-view">
       <div className="diff-scroll">
         <div className="diff-header">
-          <span className="file-title">{file.path}</span>
+          <span className="file-title">
+            {file.path}
+            {change ? <span className="change-badge">{formatChange(change)}</span> : null}
+          </span>
           <div className="diff-actions">
             <span className="file-stats">
               <span className="add">+{file.additions}</span>
@@ -225,4 +230,8 @@ export function DiffView({
 function getStatusMessage(status: "loading" | "error", showFullFile: boolean) {
   if (status === "loading") return showFullFile ? "Loading full context…" : "Loading diff…";
   return showFullFile ? "Unable to load full context." : "Unable to load diff.";
+}
+
+function formatChange(change: ChangeSectionId) {
+  return change === "staged" ? "Staged" : "Unstaged";
 }

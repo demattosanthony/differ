@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CompareSpec, DiffFile } from "../../shared/types";
+import type { ChangeSectionId, CompareSpec, DiffFile } from "../../shared/types";
 import type { ThemeId } from "../../shared/themes";
 import { appendCompareParams } from "../utils/compare";
 
@@ -13,6 +13,7 @@ type FileDiffOptions = {
   filePath: string | null;
   themeId: ThemeId;
   compare: CompareSpec | null;
+  change?: ChangeSectionId | null;
   full?: boolean;
   refreshToken?: number;
 };
@@ -22,6 +23,7 @@ export function useFileDiff({
   filePath,
   themeId,
   compare,
+  change,
   full = false,
   refreshToken,
 }: FileDiffOptions): FileDiffState {
@@ -42,6 +44,7 @@ export function useFileDiff({
     const params = new URLSearchParams();
     params.set("path", filePath);
     params.set("theme", themeId);
+    if (change) params.set("change", change);
     if (full) params.set("full", "1");
     appendCompareParams(params, compare);
     fetch(`/api/diff-file?${params.toString()}`, { signal: controller.signal })
@@ -57,7 +60,7 @@ export function useFileDiff({
       });
 
     return () => controller.abort();
-  }, [enabled, filePath, themeId, compareKey, full, refreshToken]);
+  }, [enabled, filePath, themeId, compareKey, change, full, refreshToken]);
 
   return { diff, status };
 }
