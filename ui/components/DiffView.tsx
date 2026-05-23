@@ -10,7 +10,7 @@ type DiffViewProps = {
   onViewModeChange: (mode: DiffViewMode) => void;
   showFullFile: boolean;
   onToggleFullFile: (value: boolean) => void;
-  fullFileStatus: "idle" | "loading" | "error";
+  fileStatus: "idle" | "loading" | "error";
 };
 
 type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null };
@@ -116,8 +116,24 @@ export function DiffView({
   onViewModeChange,
   showFullFile,
   onToggleFullFile,
-  fullFileStatus,
+  fileStatus,
 }: DiffViewProps) {
+  if (fileStatus !== "idle") {
+    const message =
+      fileStatus === "loading"
+        ? showFullFile
+          ? "Loading full context…"
+          : "Loading diff…"
+        : showFullFile
+          ? "Unable to load full context."
+          : "Unable to load diff.";
+    return (
+      <section className="diff-view">
+        <div className="empty centered">{message}</div>
+      </section>
+    );
+  }
+
   if (!file) {
     return (
       <section className="diff-view">
@@ -140,13 +156,8 @@ export function DiffView({
             <ViewTabs viewMode={viewMode} onChange={onViewModeChange} />
           </div>
         </div>
-        {showFullFile && fullFileStatus !== "idle" ? (
-          <div className="empty centered">
-            {fullFileStatus === "loading" ? "Loading full context…" : "Unable to load full context."}
-          </div>
-        ) : (
-          file.hunks.map((hunk, index) => {
-            const rows = buildRows(hunk.lines, hunk.header);
+        {file.hunks.map((hunk, index) => {
+          const rows = buildRows(hunk.lines, hunk.header);
 
           if (viewMode === "stacked") {
             return (
@@ -208,8 +219,7 @@ export function DiffView({
               </div>
             </div>
           );
-          })
-        )}
+          })}
       </div>
     </section>
   );

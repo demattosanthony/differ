@@ -28,6 +28,16 @@ const getDefaultBase = (repoRoot: string) => {
   return "HEAD";
 };
 
+const getRangeParams = (repoRoot: string, compare: CompareSpec) => {
+  if (compare.mode === "range") {
+    return {
+      base: compare.base ?? getDefaultBase(repoRoot),
+      head: compare.head ?? "HEAD",
+    };
+  }
+  return { base: getDefaultBase(repoRoot), head: "HEAD" };
+};
+
 export function normalizeCompare(repoRoot: string, input: CompareInput): CompareSpec {
   const mode = input.mode?.trim() ?? "";
   const base = input.base?.trim() ?? "";
@@ -53,8 +63,7 @@ export function getWorkingDiff(repoRoot: string, unified: number) {
 }
 
 export function getRangeDiff(repoRoot: string, compare: CompareSpec, unified: number) {
-  const base = compare.base ?? getDefaultBase(repoRoot);
-  const head = compare.head ?? "HEAD";
+  const { base, head } = getRangeParams(repoRoot, compare);
   return runGit(repoRoot, ["diff", "--no-color", "--patch", `--unified=${unified}`, `${base}...${head}`]);
 }
 
@@ -62,13 +71,25 @@ export function getDiff(repoRoot: string, compare: CompareSpec, unified: number)
   return compare.mode === "working" ? getWorkingDiff(repoRoot, unified) : getRangeDiff(repoRoot, compare, unified);
 }
 
+const getWorkingNumstat = (repoRoot: string) => {
+  return runGit(repoRoot, ["diff", "--no-color", "--numstat"]);
+};
+
+const getRangeNumstat = (repoRoot: string, compare: CompareSpec) => {
+  const { base, head } = getRangeParams(repoRoot, compare);
+  return runGit(repoRoot, ["diff", "--no-color", "--numstat", `${base}...${head}`]);
+};
+
+export function getDiffNumstat(repoRoot: string, compare: CompareSpec) {
+  return compare.mode === "working" ? getWorkingNumstat(repoRoot) : getRangeNumstat(repoRoot, compare);
+}
+
 const getWorkingFileDiffPatch = (repoRoot: string, filePath: string, unified: number) => {
   return runGit(repoRoot, ["diff", "--no-color", "--patch", `--unified=${unified}`, "--", filePath]);
 };
 
 const getRangeFileDiffPatch = (repoRoot: string, filePath: string, unified: number, compare: CompareSpec) => {
-  const base = compare.base ?? getDefaultBase(repoRoot);
-  const head = compare.head ?? "HEAD";
+  const { base, head } = getRangeParams(repoRoot, compare);
   return runGit(repoRoot, [
     "diff",
     "--no-color",

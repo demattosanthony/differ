@@ -6,7 +6,7 @@ import { themes, type ThemeId, type DiffViewMode } from "./themes";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
-import { useFullFileDiff } from "./hooks/useFullFileDiff";
+import { useFileDiff } from "./hooks/useFileDiff";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
@@ -28,15 +28,16 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
-  const data = useDiffData({ themeId, compare: compareOverride });
+  const { data, refreshToken } = useDiffData({ themeId, compare: compareOverride });
   const [selected, setSelected] = useSelectedFile(data?.files ?? []);
   const active = data?.files.find((file) => file.path === selected) ?? data?.files[0] ?? null;
-  const { diff: fullFileDiff, status: fullFileStatus } = useFullFileDiff({
-    enabled: showFullFile,
+  const { diff: activeDiff, status: activeDiffStatus } = useFileDiff({
+    enabled: Boolean(active?.path),
     filePath: active?.path ?? null,
     themeId,
     compare: compareOverride,
-    revision: data?.revision,
+    full: showFullFile,
+    refreshToken,
   });
 
   useTheme(themeId);
@@ -79,13 +80,13 @@ function App() {
         />
 
         <DiffView
-          file={showFullFile ? fullFileDiff ?? active : active}
+          file={activeDiff}
           emptyMessage={emptyDiffMessage}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           showFullFile={showFullFile}
           onToggleFullFile={setShowFullFile}
-          fullFileStatus={fullFileStatus}
+          fileStatus={activeDiffStatus}
         />
       </main>
       <SettingsModal

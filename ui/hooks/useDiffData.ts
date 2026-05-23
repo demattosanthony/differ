@@ -32,5 +32,5 @@ export function useDiffData({ themeId, compare }: DiffDataOptions) {
     return () => source.close();
   }, []);
 
-  return data;
+  return { data, refreshToken: refreshTick };
 }

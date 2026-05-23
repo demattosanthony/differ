@@ -3,12 +3,41 @@ import { createHash } from "crypto";
 import type { CompareSpec, DiffData, DiffFile } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
 import { parseDiff } from "./diffParser";
-import { getDiff, getFileDiffPatch } from "./git";
+import { getDiffNumstat, getFileDiffPatch } from "./git";
 import { getShikiTheme, highlightDiff } from "./highlight";
 
 const parsedCache = new Map<string, { hash: string; data: DiffData }>();
-const highlightCache = new Map<string, DiffFile[]>();
 const fileDiffCache = new Map<string, { hash: string; data: DiffFile }>();
+
+type DiffStat = { path: string; additions: number; deletions: number };
+
+const parseNumstat = (output: string): DiffStat[] => {
+  if (!output.trim()) return [];
+  return output
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [additionsRaw, deletionsRaw, ...pathParts] = line.split("\t");
+      const path = pathParts.join("\t");
+      const additions = Number(additionsRaw);
+      const deletions = Number(deletionsRaw);
+      return {
+        path: normalizeRenamePath(path),
+        additions: Number.isFinite(additions) ? additions : 0,
+        deletions: Number.isFinite(deletions) ? deletions : 0,
+      };
+    });
+};
+
+const normalizeRenamePath = (path: string) => {
+  if (!path.includes("=>")) return path;
+  if (path.includes("{")) {
+    const replaced = path.replace(/\{([^{}]*?)\s=>\s([^{}]*?)\}/g, "$2");
+    if (replaced !== path) return replaced;
+  }
+  const arrowIndex = path.indexOf("=>");
+  return arrowIndex >= 0 ? path.slice(arrowIndex + 2).trim() : path;
+};
 
 const getCompareKey = (compare: CompareSpec) =>
   compare.mode === "working" ? "working" : `range:${compare.base ?? ""}...${compare.head ?? ""}`;
@@ -20,24 +49,27 @@ export function invalidateRepoCaches(repoRoot: string) {
   for (const key of parsedCache.keys()) {
     if (key.startsWith(prefix)) parsedCache.delete(key);
   }
-  for (const key of highlightCache.keys()) {
-    if (key.startsWith(prefix)) highlightCache.delete(key);
-  }
   for (const key of fileDiffCache.keys()) {
     if (key.startsWith(prefix)) fileDiffCache.delete(key);
   }
 }
 
 export async function getDiffData(repoRoot: string, themeId: ThemeId, compare: CompareSpec): Promise<DiffData> {
-  const diff = getDiff(repoRoot, compare, 3);
-  const hash = createHash("sha1").update(diff).digest("hex");
+  const output = getDiffNumstat(repoRoot, compare);
+  const hash = createHash("sha1").update(output).digest("hex");
   const cacheKey = getRepoCompareKey(repoRoot, compare);
   const cached = parsedCache.get(cacheKey);
   let baseData: DiffData;
 
   if (!cached || cached.hash !== hash) {
-    const files = parseDiff(diff);
-    const summary = files.reduce(
+    const stats = parseNumstat(output);
+    const files = stats.map((file) => ({
+      path: file.path,
+      additions: file.additions,
+      deletions: file.deletions,
+      hunks: [],
+    }));
+    const summary = stats.reduce(
       (acc, file) => {
         acc.files += 1;
         acc.additions += file.additions;
@@ -58,18 +90,7 @@ export async function getDiffData(repoRoot: string, themeId: ThemeId, compare: C
   } else {
     baseData = cached.data;
   }
-
-  const theme = getShikiTheme(themeId);
-  const highlightKey = `${cacheKey}:${hash}:${theme}`;
-  const cachedHighlighted = highlightCache.get(highlightKey);
-  if (cachedHighlighted) {
-    return { ...baseData, files: cachedHighlighted };
-  }
-
-  const highlightedFiles = structuredClone(baseData.files);
-  await highlightDiff(highlightedFiles, themeId);
-  highlightCache.set(highlightKey, highlightedFiles);
-  return { ...baseData, files: highlightedFiles };
+  return baseData;
 }
 
 export async function getFileDiff(
