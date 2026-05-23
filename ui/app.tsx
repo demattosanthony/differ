@@ -8,9 +8,7 @@ import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
 import { useFullFileDiff } from "./hooks/useFullFileDiff";
-import { useInstallPrompt } from "./hooks/useInstallPrompt";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
-import { useServiceWorker } from "./hooks/useServiceWorker";
 import { useTheme } from "./hooks/useTheme";
 import { Sidebar } from "./components/Sidebar";
 import { DiffView } from "./components/DiffView";
@@ -34,7 +32,6 @@ function App() {
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
   const data = useDiffData({ themeId, compare: compareOverride });
   const [selected, setSelected] = useSelectedFile(data?.files ?? []);
-  const { showBanner, canInstall, isStandalone, promptInstall, dismissInstall } = useInstallPrompt();
   const active = data?.files.find((file) => file.path === selected) ?? data?.files[0] ?? null;
   const { diff: fullFileDiff, status: fullFileStatus } = useFullFileDiff({
     enabled: showFullFile,
@@ -45,7 +42,6 @@ function App() {
   });
 
   useTheme(themeId);
-  useServiceWorker();
 
   const files = useMemo<DiffFile[]>(() => {
     if (!data) return [];
@@ -87,13 +83,6 @@ function App() {
 
   return (
     <div className="page">
-      {showBanner && !isStandalone ? (
-        <InstallBanner
-          canInstall={canInstall}
-          onInstall={promptInstall}
-          onDismiss={dismissInstall}
-        />
-      ) : null}
       <main className="layout">
         <Sidebar
           data={data}
@@ -138,37 +127,6 @@ function App() {
 const rootElement = document.getElementById("root");
 if (rootElement) {
   createRoot(rootElement).render(<App />);
-}
-
-function InstallBanner({
-  canInstall,
-  onInstall,
-  onDismiss,
-}: {
-  canInstall: boolean;
-  onInstall: () => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="install-banner">
-      <div className="install-copy">
-        <div className="install-title">Install Differ</div>
-        <div className="install-subtitle">
-          {canInstall
-            ? "Launch as a themed app window with one click."
-            : "Use Chrome’s menu to install Differ to your desktop."}
-        </div>
-      </div>
-      <div className="install-actions">
-        <button className="install-button" onClick={onInstall} disabled={!canInstall}>
-          Install
-        </button>
-        <button className="install-dismiss" onClick={onDismiss}>
-          Not now
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function formatCompareLabel(compare: CompareSpec) {

@@ -27,19 +27,4 @@ export async function ensureUiAssets({ uiDir, distDir, isCompiledRuntime }: UiAs
     outdir: distDir,
     minify: false,
   });
-
-  await copyStaticUiFiles(uiDir, distDir);
-}
-
-async function copyStaticUiFiles(uiDir: string, distDir: string) {
-  const files = ["manifest.webmanifest", "sw.js", "icon.svg"];
-  await Promise.all(
-    files.map(async (file) => {
-      const sourcePath = path.join(uiDir, file);
-      const targetPath = path.join(distDir, file);
-      const source = Bun.file(sourcePath);
-      if (!(await source.exists())) return;
-      await Bun.write(targetPath, source);
-    })
-  );
 }

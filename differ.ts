@@ -1,6 +1,3 @@
-import fs from "fs";
-import os from "os";
-import path from "path";
 import { startServer } from "./server";
 import type { CompareSpec } from "./shared/types";
 
@@ -14,9 +11,6 @@ const getArg = (name: string) => {
 const requestedPort = Number(getArg("port") ?? "4141");
 const targetPath = getArg("path") ?? process.cwd();
 const compare = resolveCompareArgs(getArg("compare"), getArg("base"), getArg("head"));
-const pwaAppName = "Differ";
-let cleanupRegistered = false;
-let openedPwaApp = false;
 
 const gitRoot = getGitRoot(targetPath);
 if (!gitRoot) {
@@ -26,8 +20,7 @@ if (!gitRoot) {
 
 const { port } = await startServer({ repoRoot: gitRoot, port: requestedPort, compare });
 const url = `http://localhost:${port}/`;
-openBrowser(url, requestedPort);
-console.log(`differ: ${url}`);
+console.log(`differ: serving ${url}`);
 
 function resolveCompareArgs(compareArg?: string, baseArg?: string, headArg?: string): CompareSpec {
   const mode = compareArg?.trim();
@@ -54,79 +47,4 @@ function getGitRoot(cwd: string) {
   });
   if (result.exitCode !== 0) return null;
   return result.stdout.toString().trim();
-}
-
-function openBrowser(url: string, expectedPort: number) {
-  const platform = process.platform;
-  const shouldTryPwa = shouldOpenInstalledPwa(url, expectedPort);
-  if (shouldTryPwa && platform === "darwin") {
-    if (openInstalledPwa(pwaAppName)) {
-      openedPwaApp = true;
-      registerAppWindowCleanup();
-      return;
-    }
-  }
-  openDefaultBrowser(url);
-}
-
-function openDefaultBrowser(url: string) {
-  const platform = process.platform;
-  if (platform === "darwin") {
-    Bun.spawnSync(["open", url]);
-    return;
-  }
-  if (platform === "win32") {
-    Bun.spawnSync(["cmd", "/c", "start", "", url]);
-    return;
-  }
-  Bun.spawnSync(["xdg-open", url]);
-}
-
-function shouldOpenInstalledPwa(url: string, expectedPort: number) {
-  try {
-    const currentPort = new URL(url).port;
-    return currentPort === String(expectedPort);
-  } catch {
-    return false;
-  }
-}
-
-function openInstalledPwa(appName: string) {
-  const home = os.homedir();
-  const candidates = [
-    path.join(home, "Applications", `${appName}.app`),
-    path.join(home, "Applications", "Chrome Apps", `${appName}.app`),
-    `/Applications/${appName}.app`,
-  ];
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    const result = Bun.spawnSync(["open", candidate]);
-    if (result.exitCode === 0) return true;
-  }
-  const result = Bun.spawnSync(["open", "-a", appName]);
-  return result.exitCode === 0;
-}
-
-function closeInstalledPwa(appName: string) {
-  if (process.platform !== "darwin") return;
-  Bun.spawnSync(["osascript", "-e", `tell application "${appName}" to quit`]);
-}
-
-function registerAppWindowCleanup() {
-  if (cleanupRegistered) return;
-  cleanupRegistered = true;
-  const handleExit = () => {
-    cleanupAppResources();
-    process.exit(0);
-  };
-  process.once("SIGINT", handleExit);
-  process.once("SIGTERM", handleExit);
-  process.once("exit", () => cleanupAppResources());
-}
-
-function cleanupAppResources() {
-  if (openedPwaApp) {
-    closeInstalledPwa(pwaAppName);
-    openedPwaApp = false;
-  }
 }
