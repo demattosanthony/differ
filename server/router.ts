@@ -4,7 +4,12 @@ import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
-import { getPullRequestContext, getPullRequestReviewThreads, GitHubApiError } from "./github";
+import {
+  getPullRequestContext,
+  getPullRequestReviewThreads,
+  GitHubApiError,
+  replyToPullRequestReviewThread,
+} from "./github";
 import { getProjectFilesData, getSourceFile } from "./projectFiles";
 
 type RequestHandlerOptions = {
@@ -81,6 +86,27 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       }
     }
 
+    if (url.pathname === "/api/github/pr-review-replies" && request.method === "POST") {
+      try {
+        const body = await getJsonRequestBody(request);
+        const pullRequestNumber = getPositiveInteger(body.number);
+        const commentId = getPositiveInteger(body.commentId);
+        const commentBody = typeof body.body === "string" ? body.body.trim() : "";
+
+        if (!pullRequestNumber || !commentId || !commentBody) {
+          return Response.json({ error: "Missing pull request number, comment ID, or body" }, { status: 400 });
+        }
+
+        const data = await replyToPullRequestReviewThread(repoRoot, pullRequestNumber, commentId, commentBody);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to reply to pull request review thread" }, { status: 500 });
+      }
+    }
+
     const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
     const resolved = path.resolve(distDir, `.${filePath}`);
     if (!resolved.startsWith(distDir)) {
@@ -103,7 +129,20 @@ function getChangeFromRequest(url: URL): ChangeSectionId | undefined {
 function getPullRequestNumberFromRequest(url: URL): number | undefined {
   const value = url.searchParams.get("number");
   if (!value) return undefined;
-  const number = Number(value);
+  return getPositiveInteger(value);
+}
+
+async function getJsonRequestBody(request: Request): Promise<Record<string, unknown>> {
+  try {
+    const body = await request.json();
+    return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function getPositiveInteger(value: unknown): number | undefined {
+  const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 

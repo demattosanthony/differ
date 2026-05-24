@@ -903,6 +903,50 @@ body {
   overflow-wrap: anywhere;
 }
 
+.review-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-reply-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 54px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--content-bg);
+  color: var(--text);
+  font: 12px/1.45 "IBM Plex Sans", "Helvetica Neue", sans-serif;
+}
+
+.review-reply-input::placeholder {
+  color: var(--muted);
+}
+
+.review-reply-input:focus {
+  outline: 1px solid var(--selection-border);
+  outline-offset: 1px;
+}
+
+.review-reply-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-reply-error {
+  color: var(--del);
+  font-size: 11px;
+}
+
+.review-reply-submit:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 
 .split-columns {
   display: grid;

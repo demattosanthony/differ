@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import type {
   ChangeSectionId,
   DiffFile,
@@ -6,6 +6,7 @@ import type {
   DiffReviewCoordinate,
   DiffSide,
   PullRequestReviewThread,
+  PullRequestReviewThreadsData,
 } from "../types";
 import type { DiffViewMode } from "../themes";
 
@@ -23,6 +24,8 @@ type DiffViewProps = {
   change?: ChangeSectionId | null;
   reviewThreads?: PullRequestReviewThread[];
   reviewThreadsStatus?: "idle" | "loading" | "error";
+  pullRequestNumber?: number | null;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
 };
 
 type SplitSideRow = {
@@ -110,6 +113,8 @@ export function DiffView({
   change,
   reviewThreads = [],
   reviewThreadsStatus = "idle",
+  pullRequestNumber = null,
+  onReviewThreadsChange,
 }: DiffViewProps) {
   const reviewThreadsByCoordinate = useMemo(() => {
     const threadsByCoordinate = new Map<string, PullRequestReviewThread[]>();
@@ -187,7 +192,12 @@ export function DiffView({
                           <span className="marker">{marker(line.type)}</span>
                           {renderContent(line.content, line.html)}
                         </div>
-                        <ReviewThreads threads={threads} status={reviewThreadsStatus} />
+                        <ReviewThreads
+                          threads={threads}
+                          status={reviewThreadsStatus}
+                          pullRequestNumber={pullRequestNumber}
+                          onReviewThreadsChange={onReviewThreadsChange}
+                        />
                       </div>
                     );
                   })}
@@ -236,7 +246,12 @@ export function DiffView({
                         <span className="marker">{marker(row.type)}</span>
                         {renderContent(row.content, row.html)}
                       </div>
-                      <ReviewThreads threads={getReviewThreads(file.path, row.reviewCoordinate)} status={reviewThreadsStatus} />
+                      <ReviewThreads
+                        threads={getReviewThreads(file.path, row.reviewCoordinate)}
+                        status={reviewThreadsStatus}
+                        pullRequestNumber={pullRequestNumber}
+                        onReviewThreadsChange={onReviewThreadsChange}
+                      />
                     </div>
                   ))}
                 </div>
@@ -254,7 +269,12 @@ export function DiffView({
                         <span className="marker">{marker(row.type)}</span>
                         {renderContent(row.content, row.html)}
                       </div>
-                      <ReviewThreads threads={getReviewThreads(file.path, row.reviewCoordinate)} status={reviewThreadsStatus} />
+                      <ReviewThreads
+                        threads={getReviewThreads(file.path, row.reviewCoordinate)}
+                        status={reviewThreadsStatus}
+                        pullRequestNumber={pullRequestNumber}
+                        onReviewThreadsChange={onReviewThreadsChange}
+                      />
                     </div>
                   ))}
                 </div>
@@ -270,9 +290,13 @@ export function DiffView({
 function ReviewThreads({
   threads,
   status,
+  pullRequestNumber,
+  onReviewThreadsChange,
 }: {
   threads: PullRequestReviewThread[];
   status: "idle" | "loading" | "error";
+  pullRequestNumber: number | null;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
 }) {
   if (!threads.length) return null;
 
@@ -289,9 +313,75 @@ function ReviewThreads({
               <div className="review-comment-body">{comment.body}</div>
             </article>
           ))}
+          <ReviewReplyForm
+            thread={thread}
+            pullRequestNumber={pullRequestNumber}
+            disabled={status === "loading" || !onReviewThreadsChange}
+            onReviewThreadsChange={onReviewThreadsChange}
+          />
         </div>
       ))}
     </div>
+  );
+}
+
+function ReviewReplyForm({
+  thread,
+  pullRequestNumber,
+  disabled,
+  onReviewThreadsChange,
+}: {
+  thread: PullRequestReviewThread;
+  pullRequestNumber: number | null;
+  disabled: boolean;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
+}) {
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting" | "error">("idle");
+  const rootCommentId = thread.comments[0]?.id ?? null;
+  const canSubmit = Boolean(pullRequestNumber && rootCommentId && body.trim() && status !== "submitting" && !disabled);
+
+  const submitReply = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!pullRequestNumber || !rootCommentId || !body.trim() || !onReviewThreadsChange) return;
+
+    setStatus("submitting");
+    try {
+      const response = await fetch("/api/github/pr-review-replies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          number: pullRequestNumber,
+          commentId: rootCommentId,
+          body,
+        }),
+      });
+      if (!response.ok) throw new Error("Reply failed");
+      onReviewThreadsChange(await response.json());
+      setBody("");
+      setStatus("idle");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <form className="review-reply-form" onSubmit={submitReply}>
+      <textarea
+        className="review-reply-input"
+        placeholder="Reply"
+        value={body}
+        disabled={disabled || status === "submitting"}
+        rows={2}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <div className="review-reply-actions">
+        {status === "error" ? <span className="review-reply-error">Unable to reply</span> : null}
+        <button type="submit" className="tab review-reply-submit" disabled={!canSubmit}>
+          {status === "submitting" ? "Replying…" : "Reply"}
+        </button>
+      </div>
+    </form>
   );
 }
 

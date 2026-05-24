@@ -48,7 +48,11 @@ function App() {
   const { data: pullRequestContext, status: pullRequestStatus } = usePullRequestContext({
     enabled: sidebarActivity === "review",
   });
-  const { data: reviewThreadsData, status: reviewThreadsStatus } = usePullRequestReviewThreads({
+  const {
+    data: reviewThreadsData,
+    status: reviewThreadsStatus,
+    setData: setReviewThreadsData,
+  } = usePullRequestReviewThreads({
     enabled: sidebarActivity === "review",
     pullRequestNumber: pullRequestContext?.pullRequest?.number ?? null,
   });
@@ -234,6 +238,8 @@ function App() {
             change={active?.change ?? null}
             reviewThreads={sidebarActivity === "review" ? reviewThreadsData?.threads ?? [] : []}
             reviewThreadsStatus={reviewThreadsStatus}
+            pullRequestNumber={pullRequestContext?.pullRequest?.number ?? null}
+            onReviewThreadsChange={setReviewThreadsData}
           />
         ) : (
           <SourceView

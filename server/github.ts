@@ -119,6 +119,38 @@ export async function getPullRequestReviewThreads(
   };
 }
 
+export async function replyToPullRequestReviewThread(
+  repoRoot: string,
+  pullRequestNumber: number,
+  commentId: number,
+  body: string
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = await getPullRequest(repository, pullRequestNumber);
+  await githubFetch<GitHubReviewCommentResponse>(
+    repository,
+    `/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/comments/${commentId}/replies`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    }
+  );
+
+  const comments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(comments),
+  };
+}
+
 export function getGitHubRepository(repoRoot: string): GitHubRepository | null {
   const remoteUrl = runGit(repoRoot, ["remote", "get-url", "origin"]).trim();
   const parsed = parseGitHubRemoteUrl(remoteUrl);
@@ -198,8 +230,9 @@ async function githubFetchPages<T>(repository: GitHubRepository, path: string) {
   }
 }
 
-async function githubFetch<T>(repository: GitHubRepository, path: string): Promise<T> {
+async function githubFetch<T>(repository: GitHubRepository, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`https://api.github.com${path}`, {
+    ...init,
     headers: getGitHubHeaders(repository),
   });
 
@@ -221,6 +254,7 @@ function getGitHubHeaders(repository: GitHubRepository): HeadersInit {
     Accept: "application/vnd.github+json",
     "User-Agent": `differ/${repository.owner}-${repository.name}`,
     "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }

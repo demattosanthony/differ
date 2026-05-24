@@ -4,6 +4,7 @@ import type { PullRequestReviewThreadsData } from "../../shared/types";
 type PullRequestReviewThreadsState = {
   data: PullRequestReviewThreadsData | null;
   status: "idle" | "loading" | "error";
+  setData: (data: PullRequestReviewThreadsData) => void;
 };
 
 type PullRequestReviewThreadsOptions = {
@@ -43,5 +44,5 @@ export function usePullRequestReviewThreads({
     return () => controller.abort();
   }, [enabled, pullRequestNumber]);
 
-  return { data, status };
+  return { data, status, setData };
 }
