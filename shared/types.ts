@@ -1,4 +1,22 @@
-export type DiffLine = { type: "add" | "del" | "context"; content: string; html?: string };
+export type DiffLineType = "add" | "del" | "context";
+
+export type DiffSide = "LEFT" | "RIGHT";
+
+export type DiffReviewCoordinate = {
+  side: DiffSide;
+  line: number;
+  diffPosition: number;
+};
+
+export type DiffLine = {
+  type: DiffLineType;
+  content: string;
+  html?: string;
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+  diffPosition: number;
+  reviewCoordinates: Partial<Record<DiffSide, DiffReviewCoordinate>>;
+};
 
 export type DiffHunk = { header: string; lines: DiffLine[] };
 
@@ -57,4 +75,38 @@ export type SourceFileData = {
   truncated: boolean;
   binary: boolean;
   lines: SourceLine[];
+};
+
+export type GitHubRepository = {
+  owner: string;
+  name: string;
+  remoteUrl: string;
+};
+
+export type PullRequestSummary = {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  author: string | null;
+  baseRef: string;
+  baseSha: string;
+  headRef: string;
+  headSha: string;
+};
+
+export type PullRequestFileData = {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+};
+
+export type PullRequestContextData = {
+  repository: GitHubRepository | null;
+  currentBranch: string | null;
+  pullRequest: PullRequestSummary | null;
+  files: PullRequestFileData[];
 };

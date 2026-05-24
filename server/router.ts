@@ -4,6 +4,7 @@ import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
+import { getPullRequestContext, GitHubApiError } from "./github";
 import { getProjectFilesData, getSourceFile } from "./projectFiles";
 
 type RequestHandlerOptions = {
@@ -54,6 +55,19 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       return Response.json(data);
     }
 
+    if (url.pathname === "/api/github/pr-context") {
+      const pullRequestNumber = getPullRequestNumberFromRequest(url);
+      try {
+        const data = await getPullRequestContext(repoRoot, pullRequestNumber);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to load pull request context" }, { status: 500 });
+      }
+    }
+
     const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
     const resolved = path.resolve(distDir, `.${filePath}`);
     if (!resolved.startsWith(distDir)) {
@@ -71,6 +85,13 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
 function getChangeFromRequest(url: URL): ChangeSectionId | undefined {
   const change = url.searchParams.get("change");
   return change === "staged" || change === "unstaged" ? change : undefined;
+}
+
+function getPullRequestNumberFromRequest(url: URL): number | undefined {
+  const value = url.searchParams.get("number");
+  if (!value) return undefined;
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
 function getCompareFromRequest(url: URL, repoRoot: string, fallback: CompareSpec): CompareSpec {

@@ -1,12 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import type { ChangeSectionId, DiffData, DiffFile, DiffSection, ProjectFilesData } from "../types";
+import type {
+  ChangeSectionId,
+  DiffData,
+  DiffFile,
+  DiffSection,
+  ProjectFilesData,
+  PullRequestContextData,
+} from "../types";
 
 export type SidebarScope = "changes" | "files";
 export type SidebarActivity = "files" | "changes" | "review";
 
 type SidebarProps = {
   data: DiffData | null;
+  pullRequestContext: PullRequestContextData | null;
+  pullRequestStatus: "idle" | "loading" | "error";
   projectData: ProjectFilesData | null;
   compareLabel: string;
   scope: SidebarScope;
@@ -112,6 +121,8 @@ const activityRailWidth = 48;
 
 export function Sidebar({
   data,
+  pullRequestContext,
+  pullRequestStatus,
   projectData,
   compareLabel,
   scope,
@@ -386,6 +397,9 @@ export function Sidebar({
               <span className="del">-{data?.summary.deletions ?? 0}</span>
             </div>
           ) : null}
+          {activity === "review" ? (
+            <PullRequestSummary context={pullRequestContext} status={pullRequestStatus} />
+          ) : null}
           <input
             className="search"
             placeholder={getSearchPlaceholder(activity)}
@@ -427,6 +441,44 @@ export function Sidebar({
         onPointerDown={startSidebarResize}
         onKeyDown={handleResizeKeyDown}
       />
+    </div>
+  );
+}
+
+function PullRequestSummary({
+  context,
+  status,
+}: {
+  context: PullRequestContextData | null;
+  status: "idle" | "loading" | "error";
+}) {
+  if (status === "loading") {
+    return <div className="pr-summary muted">Loading pull request…</div>;
+  }
+
+  if (status === "error") {
+    return <div className="pr-summary muted">Unable to load pull request</div>;
+  }
+
+  if (!context?.repository) {
+    return <div className="pr-summary muted">No GitHub remote</div>;
+  }
+
+  if (!context.pullRequest) {
+    return <div className="pr-summary muted">No open PR for {context.currentBranch ?? "this branch"}</div>;
+  }
+
+  return (
+    <div className="pr-summary">
+      <div className="pr-title">
+        <span className="pr-number">#{context.pullRequest.number}</span>
+        <span>{context.pullRequest.title}</span>
+      </div>
+      <div className="pr-meta">
+        <span>{context.pullRequest.author ?? "unknown"}</span>
+        <span>{context.files.length} files</span>
+        <span>{context.pullRequest.baseRef} &lt;- {context.pullRequest.headRef}</span>
+      </div>
     </div>
   );
 }

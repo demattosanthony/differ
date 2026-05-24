@@ -8,6 +8,7 @@ import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
 import { useFileDiff } from "./hooks/useFileDiff";
 import { useProjectFiles } from "./hooks/useProjectFiles";
+import { usePullRequestContext } from "./hooks/usePullRequestContext";
 import { useSourceFile } from "./hooks/useSourceFile";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useTheme } from "./hooks/useTheme";
@@ -43,6 +44,9 @@ function App() {
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
   const projectCompare = useMemo<CompareSpec>(() => ({ mode: "working" }), []);
   const { data, refreshToken } = useDiffData({ themeId, compare: compareOverride });
+  const { data: pullRequestContext, status: pullRequestStatus } = usePullRequestContext({
+    enabled: sidebarActivity === "review",
+  });
   const files = data?.files ?? emptyDiffFiles;
   const [selected, setSelected] = useSelectedFile(files);
   const active = files.find((file) => selected && matchesSelection(file, selected)) ?? files[0] ?? null;
@@ -191,6 +195,8 @@ function App() {
       <main className="layout">
         <Sidebar
           data={data}
+          pullRequestContext={pullRequestContext}
+          pullRequestStatus={pullRequestStatus}
           projectData={projectData}
           compareLabel={compareLabel}
           scope={sidebarScope}

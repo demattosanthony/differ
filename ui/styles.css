@@ -538,6 +538,50 @@ body {
   color: var(--muted);
 }
 
+.pr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel-strong) 44%, transparent);
+  font-size: 12px;
+}
+
+.pr-summary.muted {
+  color: var(--muted);
+}
+
+.pr-title {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--title);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.pr-title span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-number {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.pr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .search {
   padding: 7px 9px;
   border-radius: 5px;

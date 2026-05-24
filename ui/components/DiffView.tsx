@@ -1,4 +1,4 @@
-import type { ChangeSectionId, DiffFile, DiffLine } from "../types";
+import type { ChangeSectionId, DiffFile, DiffLineType, DiffReviewCoordinate, DiffSide } from "../types";
 import type { DiffViewMode } from "../themes";
 
 type SplitCellType = "add" | "del" | "context" | "empty";
@@ -15,45 +15,20 @@ type DiffViewProps = {
   change?: ChangeSectionId | null;
 };
 
-type Row = { line: DiffLine; oldNumber: number | null; newNumber: number | null };
-type SplitSideRow = { type: "add" | "del" | "context"; number: number | null; content: string; html?: string };
-
-const parseHunkHeader = (header: string) => {
-  const match = header.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-  if (!match) return { oldStart: 0, newStart: 0 };
-  return { oldStart: Number(match[1]), newStart: Number(match[2]) };
+type SplitSideRow = {
+  type: DiffLineType;
+  side: DiffSide;
+  number: number | null;
+  content: string;
+  html?: string;
+  diffPosition: number;
+  reviewCoordinate?: DiffReviewCoordinate;
 };
 
 const marker = (type: SplitCellType) => (type === "add" ? "+" : type === "del" ? "-" : " ");
 
 const renderContent = (content: string, html?: string) =>
   html ? <span className="content" dangerouslySetInnerHTML={{ __html: html }} /> : <span className="content">{content}</span>;
-
-const buildRows = (hunkLines: DiffLine[], header: string): Row[] => {
-  const { oldStart, newStart } = parseHunkHeader(header);
-  let oldLine = oldStart;
-  let newLine = newStart;
-
-  return hunkLines.map((line) => {
-    let oldNumber: number | null = null;
-    let newNumber: number | null = null;
-
-    if (line.type === "context") {
-      oldNumber = oldLine;
-      newNumber = newLine;
-      oldLine += 1;
-      newLine += 1;
-    } else if (line.type === "del") {
-      oldNumber = oldLine;
-      oldLine += 1;
-    } else {
-      newNumber = newLine;
-      newLine += 1;
-    }
-
-    return { line, oldNumber, newNumber };
-  });
-};
 
 const ViewTabs = ({ viewMode, onChange }: { viewMode: DiffViewMode; onChange: (mode: DiffViewMode) => void }) => (
   <div className="view-tabs" role="tablist" aria-label="Diff layout">
@@ -159,19 +134,26 @@ export function DiffView({
           </div>
         </div>
         {file.hunks.map((hunk, index) => {
-          const rows = buildRows(hunk.lines, hunk.header);
-
           if (viewMode === "stacked") {
             return (
               <div key={`${file.path}-${index}`} className="hunk">
                 <div className="hunk-lines">
-                  {rows.map((row, lineIndex) => {
-                    const displayNumber = row.line.type === "del" ? row.oldNumber : row.newNumber;
+                  {hunk.lines.map((line, lineIndex) => {
+                    const displayNumber = line.type === "del" ? line.oldLineNumber : line.newLineNumber;
+                    const reviewSide = line.type === "del" ? "LEFT" : "RIGHT";
+                    const reviewCoordinate = line.reviewCoordinates[reviewSide];
                     return (
-                      <div key={lineIndex} className={`line ${row.line.type}`}>
+                      <div
+                        key={lineIndex}
+                        className={`line ${line.type}`}
+                        data-review-path={file.path}
+                        data-review-side={reviewSide}
+                        data-review-line={reviewCoordinate?.line}
+                        data-diff-position={line.diffPosition}
+                      >
                         <span className="line-num">{displayNumber ?? ""}</span>
-                        <span className="marker">{marker(row.line.type)}</span>
-                        {renderContent(row.line.content, row.line.html)}
+                        <span className="marker">{marker(line.type)}</span>
+                        {renderContent(line.content, line.html)}
                       </div>
                     );
                   })}
@@ -180,21 +162,27 @@ export function DiffView({
             );
           }
 
-          const leftRows: SplitSideRow[] = rows
-            .filter((row) => row.line.type !== "add")
-            .map((row) => ({
-              type: row.line.type,
-              number: row.oldNumber,
-              content: row.line.content,
-              html: row.line.html,
+          const leftRows: SplitSideRow[] = hunk.lines
+            .filter((line) => line.type !== "add")
+            .map((line) => ({
+              type: line.type,
+              side: "LEFT",
+              number: line.oldLineNumber,
+              content: line.content,
+              html: line.html,
+              diffPosition: line.diffPosition,
+              reviewCoordinate: line.reviewCoordinates.LEFT,
             }));
-          const rightRows: SplitSideRow[] = rows
-            .filter((row) => row.line.type !== "del")
-            .map((row) => ({
-              type: row.line.type,
-              number: row.newNumber,
-              content: row.line.content,
-              html: row.line.html,
+          const rightRows: SplitSideRow[] = hunk.lines
+            .filter((line) => line.type !== "del")
+            .map((line) => ({
+              type: line.type,
+              side: "RIGHT",
+              number: line.newLineNumber,
+              content: line.content,
+              html: line.html,
+              diffPosition: line.diffPosition,
+              reviewCoordinate: line.reviewCoordinates.RIGHT,
             }));
 
           return (
@@ -202,7 +190,14 @@ export function DiffView({
               <div className="split-columns">
                 <div className="split-pane">
                   {leftRows.map((row, lineIndex) => (
-                    <div key={lineIndex} className={`split-line ${row.type}`}>
+                    <div
+                      key={lineIndex}
+                      className={`split-line ${row.type}`}
+                      data-review-path={file.path}
+                      data-review-side={row.side}
+                      data-review-line={row.reviewCoordinate?.line}
+                      data-diff-position={row.diffPosition}
+                    >
                       <span className="line-num">{row.number ?? ""}</span>
                       <span className="marker">{marker(row.type)}</span>
                       {renderContent(row.content, row.html)}
@@ -211,7 +206,14 @@ export function DiffView({
                 </div>
                 <div className="split-pane">
                   {rightRows.map((row, lineIndex) => (
-                    <div key={lineIndex} className={`split-line ${row.type}`}>
+                    <div
+                      key={lineIndex}
+                      className={`split-line ${row.type}`}
+                      data-review-path={file.path}
+                      data-review-side={row.side}
+                      data-review-line={row.reviewCoordinate?.line}
+                      data-diff-position={row.diffPosition}
+                    >
                       <span className="line-num">{row.number ?? ""}</span>
                       <span className="marker">{marker(row.type)}</span>
                       {renderContent(row.content, row.html)}
