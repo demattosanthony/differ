@@ -153,6 +153,64 @@ export async function replyToPullRequestReviewThread(
   };
 }
 
+export async function updatePullRequestReviewComment(
+  repoRoot: string,
+  pullRequestNumber: number,
+  commentId: number,
+  body: string
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = await getPullRequest(repository, pullRequestNumber);
+  await githubFetch<GitHubReviewCommentResponse>(
+    repository,
+    `/repos/${repository.owner}/${repository.name}/pulls/comments/${commentId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    }
+  );
+
+  const comments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(comments),
+  };
+}
+
+export async function deletePullRequestReviewComment(
+  repoRoot: string,
+  pullRequestNumber: number,
+  commentId: number
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = await getPullRequest(repository, pullRequestNumber);
+  await githubFetch<void>(repository, `/repos/${repository.owner}/${repository.name}/pulls/comments/${commentId}`, {
+    method: "DELETE",
+  });
+
+  const comments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(comments),
+  };
+}
+
 export function getGitHubRepository(repoRoot: string): GitHubRepository | null {
   const remoteUrl = runGit(repoRoot, ["remote", "get-url", "origin"]).trim();
   const parsed = parseGitHubRemoteUrl(remoteUrl);
@@ -238,7 +296,10 @@ async function githubFetch<T>(repository: GitHubRepository, path: string, init: 
     headers: getGitHubHeaders(repository),
   });
 
-  if (response.ok) return (await response.json()) as T;
+  if (response.ok) {
+    if (response.status === 204) return undefined as T;
+    return (await response.json()) as T;
+  }
 
   let message = `GitHub request failed with status ${response.status}`;
   try {

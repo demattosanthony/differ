@@ -5,6 +5,7 @@ import type {
   DiffLineType,
   DiffReviewCoordinate,
   DiffSide,
+  PullRequestReviewComment,
   PullRequestReviewThread,
   PullRequestReviewThreadsData,
 } from "../types";
@@ -305,13 +306,14 @@ function ReviewThreads({
       {threads.map((thread) => (
         <div key={thread.id} className="review-thread">
           {thread.comments.map((comment) => (
-            <article key={comment.id} className="review-comment">
-              <div className="review-comment-header">
-                <span>{comment.author ?? "unknown"}</span>
-                {thread.outdated ? <span>Outdated</span> : null}
-              </div>
-              <div className="review-comment-body">{comment.body}</div>
-            </article>
+            <ReviewCommentCard
+              key={comment.id}
+              comment={comment}
+              outdated={thread.outdated}
+              pullRequestNumber={pullRequestNumber}
+              disabled={status === "loading" || !onReviewThreadsChange}
+              onReviewThreadsChange={onReviewThreadsChange}
+            />
           ))}
           <ReviewReplyForm
             thread={thread}
@@ -322,6 +324,137 @@ function ReviewThreads({
         </div>
       ))}
     </div>
+  );
+}
+
+function ReviewCommentCard({
+  comment,
+  outdated,
+  pullRequestNumber,
+  disabled,
+  onReviewThreadsChange,
+}: {
+  comment: PullRequestReviewComment;
+  outdated: boolean;
+  pullRequestNumber: number | null;
+  disabled: boolean;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
+}) {
+  const [draft, setDraft] = useState(comment.body);
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "saving" | "deleting">("idle");
+  const canSave = Boolean(pullRequestNumber && draft.trim() && draft !== comment.body && status === "idle" && !disabled);
+  const canMutate = Boolean(pullRequestNumber && status === "idle" && !disabled && onReviewThreadsChange);
+
+  const saveComment = async () => {
+    if (!pullRequestNumber || !draft.trim() || !onReviewThreadsChange) return;
+
+    setStatus("saving");
+    setError(null);
+    try {
+      onReviewThreadsChange(
+        await mutateReviewComment("/api/github/pr-review-comments", "PATCH", {
+          number: pullRequestNumber,
+          commentId: comment.id,
+          body: draft,
+        })
+      );
+      setEditing(false);
+      setConfirmDelete(false);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to update");
+    } finally {
+      setStatus("idle");
+    }
+  };
+
+  const deleteComment = async () => {
+    if (!pullRequestNumber || !onReviewThreadsChange) return;
+
+    setStatus("deleting");
+    setError(null);
+    try {
+      onReviewThreadsChange(
+        await mutateReviewComment("/api/github/pr-review-comments", "DELETE", {
+          number: pullRequestNumber,
+          commentId: comment.id,
+        })
+      );
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to delete");
+      setStatus("idle");
+    }
+  };
+
+  return (
+    <article className="review-comment">
+      <div className="review-comment-header">
+        <span>{comment.author ?? "unknown"}</span>
+        {outdated ? <span>Outdated</span> : null}
+        <div className="review-comment-actions">
+          {editing ? (
+            <button
+              type="button"
+              className="review-text-button"
+              disabled={status !== "idle"}
+              onClick={() => {
+                setDraft(comment.body);
+                setEditing(false);
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+          ) : (
+            <button type="button" className="review-text-button" disabled={!canMutate} onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          )}
+          <button
+            type="button"
+            className="review-text-button danger"
+            disabled={!canMutate}
+            onClick={() => setConfirmDelete((value) => !value)}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+      {editing ? (
+        <div className="review-edit-form">
+          <textarea
+            className="review-reply-input"
+            value={draft}
+            disabled={status !== "idle"}
+            rows={3}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div className="review-reply-actions">
+            {error ? <span className="review-reply-error">{error}</span> : null}
+            <button type="button" className="tab review-reply-submit" disabled={!canSave} onClick={saveComment}>
+              {status === "saving" ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="review-comment-body">{comment.body}</div>
+      )}
+      {confirmDelete ? (
+        <div className="review-delete-confirm">
+          <span>{error ?? "Delete this comment?"}</span>
+          <button type="button" className="review-text-button" disabled={status !== "idle"} onClick={() => setConfirmDelete(false)}>
+            Cancel
+          </button>
+          <button type="button" className="review-text-button danger" disabled={status !== "idle"} onClick={deleteComment}>
+            {status === "deleting" ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      ) : error && !editing ? (
+        <div className="review-reply-error">{error}</div>
+      ) : null}
+    </article>
   );
 }
 
@@ -358,10 +491,7 @@ function ReviewReplyForm({
           body,
         }),
       });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(typeof errorBody?.error === "string" ? errorBody.error : "Reply failed");
-      }
+      if (!response.ok) throw new Error(await getResponseError(response, "Reply failed"));
       onReviewThreadsChange(await response.json());
       setBody("");
       setStatus("idle");
@@ -389,6 +519,21 @@ function ReviewReplyForm({
       </div>
     </form>
   );
+}
+
+async function mutateReviewComment(endpoint: string, method: "PATCH" | "DELETE", body: Record<string, unknown>) {
+  const response = await fetch(endpoint, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await getResponseError(response, "Review comment mutation failed"));
+  return (await response.json()) as PullRequestReviewThreadsData;
+}
+
+async function getResponseError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null);
+  return typeof body?.error === "string" ? body.error : fallback;
 }
 
 function getStatusMessage(status: "loading" | "error", showFullFile: boolean) {

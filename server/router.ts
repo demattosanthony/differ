@@ -5,10 +5,12 @@ import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
 import {
+  deletePullRequestReviewComment,
   getPullRequestContext,
   getPullRequestReviewThreads,
   GitHubApiError,
   replyToPullRequestReviewThread,
+  updatePullRequestReviewComment,
 } from "./github";
 import { getProjectFilesData, getSourceFile } from "./projectFiles";
 
@@ -88,22 +90,67 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
 
     if (url.pathname === "/api/github/pr-review-replies" && request.method === "POST") {
       try {
-        const body = await getJsonRequestBody(request);
-        const pullRequestNumber = getPositiveInteger(body.number);
-        const commentId = getPositiveInteger(body.commentId);
-        const commentBody = typeof body.body === "string" ? body.body.trim() : "";
+        const mutation = await getReviewCommentMutationRequest(request);
 
-        if (!pullRequestNumber || !commentId || !commentBody) {
+        if (!mutation) {
           return Response.json({ error: "Missing pull request number, comment ID, or body" }, { status: 400 });
         }
 
-        const data = await replyToPullRequestReviewThread(repoRoot, pullRequestNumber, commentId, commentBody);
+        const data = await replyToPullRequestReviewThread(
+          repoRoot,
+          mutation.pullRequestNumber,
+          mutation.commentId,
+          mutation.body
+        );
         return Response.json(data);
       } catch (error) {
         if (error instanceof GitHubApiError) {
           return Response.json({ error: error.message }, { status: error.status });
         }
         return Response.json({ error: "Unable to reply to pull request review thread" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/github/pr-review-comments" && request.method === "PATCH") {
+      try {
+        const mutation = await getReviewCommentMutationRequest(request);
+
+        if (!mutation) {
+          return Response.json({ error: "Missing pull request number, comment ID, or body" }, { status: 400 });
+        }
+
+        const data = await updatePullRequestReviewComment(
+          repoRoot,
+          mutation.pullRequestNumber,
+          mutation.commentId,
+          mutation.body
+        );
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to update pull request review comment" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/github/pr-review-comments" && request.method === "DELETE") {
+      try {
+        const body = await getJsonRequestBody(request);
+        const pullRequestNumber = getPositiveInteger(body.number);
+        const commentId = getPositiveInteger(body.commentId);
+
+        if (!pullRequestNumber || !commentId) {
+          return Response.json({ error: "Missing pull request number or comment ID" }, { status: 400 });
+        }
+
+        const data = await deletePullRequestReviewComment(repoRoot, pullRequestNumber, commentId);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to delete pull request review comment" }, { status: 500 });
       }
     }
 
@@ -139,6 +186,16 @@ async function getJsonRequestBody(request: Request): Promise<Record<string, unkn
   } catch {
     return {};
   }
+}
+
+async function getReviewCommentMutationRequest(request: Request) {
+  const body = await getJsonRequestBody(request);
+  const pullRequestNumber = getPositiveInteger(body.number);
+  const commentId = getPositiveInteger(body.commentId);
+  const commentBody = typeof body.body === "string" ? body.body.trim() : "";
+
+  if (!pullRequestNumber || !commentId || !commentBody) return null;
+  return { pullRequestNumber, commentId, body: commentBody };
 }
 
 function getPositiveInteger(value: unknown): number | undefined {

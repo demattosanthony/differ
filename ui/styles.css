@@ -895,12 +895,58 @@ body {
   font-weight: 600;
 }
 
+.review-comment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.review-text-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.review-text-button:hover:not(:disabled) {
+  color: var(--title);
+}
+
+.review-text-button.danger:hover:not(:disabled),
+.review-text-button.danger:focus-visible {
+  color: var(--del);
+}
+
+.review-text-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
 .review-comment-body {
   color: var(--text);
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.review-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .review-reply-form {

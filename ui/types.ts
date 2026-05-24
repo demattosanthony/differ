@@ -12,6 +12,7 @@ export type {
   DiffData,
   ProjectFilesData,
   PullRequestContextData,
+  PullRequestReviewComment,
   PullRequestReviewThread,
   PullRequestReviewThreadsData,
   SourceFileData,
