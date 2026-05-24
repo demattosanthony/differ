@@ -107,6 +107,7 @@ export type PullRequestFileData = {
 export type PullRequestContextData = {
   repository: GitHubRepository | null;
   currentBranch: string | null;
+  viewerLogin: string | null;
   pullRequest: PullRequestSummary | null;
   files: PullRequestFileData[];
 };
@@ -137,6 +138,7 @@ export type PullRequestReviewThread = {
 export type PullRequestReviewThreadsData = {
   repository: GitHubRepository | null;
   currentBranch: string | null;
+  viewerLogin: string | null;
   pullRequest: PullRequestSummary | null;
   threads: PullRequestReviewThread[];
 };

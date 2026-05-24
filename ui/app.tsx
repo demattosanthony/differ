@@ -100,6 +100,10 @@ function App() {
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
   const emptyDiffMessage = data ? (files.length ? "No matching files" : "No changes") : "Loading diff…";
+  const approveDisabledReason =
+    pullRequestContext?.viewerLogin && pullRequestContext.pullRequest?.author === pullRequestContext.viewerLogin
+      ? "You cannot approve your own pull request"
+      : null;
 
   useEffect(() => {
     if (!repoRoot || typeof window === "undefined") return;
@@ -302,6 +306,7 @@ function App() {
             onDeletePendingReviewComment={deletePendingReviewComment}
             onDiscardPendingReview={() => setPendingReviewComments([])}
             onSubmitPendingReview={submitPendingReview}
+            approveDisabledReason={approveDisabledReason}
           />
         ) : (
           <SourceView

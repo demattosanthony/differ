@@ -35,6 +35,7 @@ type DiffViewProps = {
   onDeletePendingReviewComment?: (id: string) => void;
   onDiscardPendingReview?: () => void;
   onSubmitPendingReview?: (event: PullRequestReviewEvent, body: string) => Promise<PullRequestReviewThreadsData>;
+  approveDisabledReason?: string | null;
 };
 
 type SplitSideRow = {
@@ -135,6 +136,7 @@ export function DiffView({
   onDeletePendingReviewComment,
   onDiscardPendingReview,
   onSubmitPendingReview,
+  approveDisabledReason = null,
 }: DiffViewProps) {
   const [newCommentTarget, setNewCommentTarget] = useState<NewReviewCommentTarget | null>(null);
   const reviewThreadsByCoordinate = useMemo(() => {
@@ -224,6 +226,7 @@ export function DiffView({
             comments={pendingReviewComments}
             onDiscard={onDiscardPendingReview}
             onSubmit={onSubmitPendingReview}
+            approveDisabledReason={approveDisabledReason}
           />
         ) : null}
         {file.hunks.map((hunk, index) => {
@@ -455,10 +458,12 @@ function PendingReviewSubmitPanel({
   comments,
   onDiscard,
   onSubmit,
+  approveDisabledReason,
 }: {
   comments: PendingPullRequestReviewComment[];
   onDiscard?: () => void;
   onSubmit?: (event: PullRequestReviewEvent, body: string) => Promise<PullRequestReviewThreadsData>;
+  approveDisabledReason?: string | null;
 }) {
   const [body, setBody] = useState("");
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
@@ -501,7 +506,13 @@ function PendingReviewSubmitPanel({
         <button type="button" className="tab review-reply-submit" disabled={!canSubmit} onClick={() => submitReview("COMMENT")}>
           {status === "submitting" ? "Submitting…" : "Comment"}
         </button>
-        <button type="button" className="tab review-reply-submit" disabled={!onSubmit || status === "submitting"} onClick={() => submitReview("APPROVE")}>
+        <button
+          type="button"
+          className="tab review-reply-submit"
+          disabled={!onSubmit || status === "submitting" || Boolean(approveDisabledReason)}
+          title={approveDisabledReason ?? "Approve"}
+          onClick={() => submitReview("APPROVE")}
+        >
           Approve
         </button>
         <button type="button" className="tab review-reply-submit danger" disabled={!canSubmit} onClick={() => submitReview("REQUEST_CHANGES")}>

@@ -53,6 +53,11 @@ type GitHubReviewCommentResponse = {
 
 type GitHubErrorResponse = {
   message?: string;
+  errors?: Array<string | { message?: string }>;
+};
+
+type GitHubViewerResponse = {
+  login: string;
 };
 
 let cachedGitHubToken: string | null | undefined;
@@ -75,20 +80,22 @@ export async function getPullRequestContext(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, files: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, files: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = pullRequestNumber
     ? await getPullRequest(repository, pullRequestNumber)
     : await findPullRequestForBranch(repository, currentBranch);
 
   if (!pullRequest) {
-    return { repository, currentBranch, pullRequest: null, files: [] };
+    return { repository, currentBranch, viewerLogin, pullRequest: null, files: [] };
   }
 
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     files: await getPullRequestFiles(repository, pullRequest.number),
   };
@@ -102,21 +109,23 @@ export async function getPullRequestReviewThreads(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = pullRequestNumber
     ? await getPullRequest(repository, pullRequestNumber)
     : await findPullRequestForBranch(repository, currentBranch);
 
   if (!pullRequest) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin, pullRequest: null, threads: [] };
   }
 
   const comments = await getPullRequestReviewComments(repository, pullRequest.number);
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
   };
@@ -132,8 +141,9 @@ export async function replyToPullRequestReviewThread(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = await getPullRequest(repository, pullRequestNumber);
   await githubFetch<GitHubReviewCommentResponse>(
@@ -149,6 +159,7 @@ export async function replyToPullRequestReviewThread(
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
   };
@@ -164,8 +175,9 @@ export async function updatePullRequestReviewComment(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = await getPullRequest(repository, pullRequestNumber);
   await githubFetch<GitHubReviewCommentResponse>(
@@ -181,6 +193,7 @@ export async function updatePullRequestReviewComment(
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
   };
@@ -195,8 +208,9 @@ export async function deletePullRequestReviewComment(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = await getPullRequest(repository, pullRequestNumber);
   await githubFetch<void>(repository, `/repos/${repository.owner}/${repository.name}/pulls/comments/${commentId}`, {
@@ -207,6 +221,7 @@ export async function deletePullRequestReviewComment(
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
   };
@@ -224,8 +239,9 @@ export async function createPullRequestReviewComment(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = await getPullRequest(repository, pullRequestNumber);
   await githubFetch<GitHubReviewCommentResponse>(
@@ -247,6 +263,7 @@ export async function createPullRequestReviewComment(
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
   };
@@ -263,8 +280,9 @@ export async function submitPullRequestReview(
   const currentBranch = getCurrentBranch(repoRoot);
 
   if (!repository) {
-    return { repository, currentBranch, pullRequest: null, threads: [] };
+    return { repository, currentBranch, viewerLogin: null, pullRequest: null, threads: [] };
   }
+  const viewerLogin = await getGitHubViewerLogin(repository);
 
   const pullRequest = await getPullRequest(repository, pullRequestNumber);
   await githubFetch(
@@ -290,6 +308,7 @@ export async function submitPullRequestReview(
   return {
     repository,
     currentBranch,
+    viewerLogin,
     pullRequest,
     threads: toPullRequestReviewThreads(refreshedComments),
   };
@@ -388,11 +407,21 @@ async function githubFetch<T>(repository: GitHubRepository, path: string, init: 
   let message = `GitHub request failed with status ${response.status}`;
   try {
     const error = (await response.json()) as GitHubErrorResponse;
-    if (error.message) message = error.message;
+    message = getGitHubErrorMessage(error) ?? message;
   } catch {
     // Preserve the generic status message when GitHub does not return JSON.
   }
   throw new GitHubApiError(message, response.status);
+}
+
+async function getGitHubViewerLogin(repository: GitHubRepository) {
+  if (!getGitHubToken()) return null;
+  try {
+    const viewer = await githubFetch<GitHubViewerResponse>(repository, "/user");
+    return viewer.login;
+  } catch {
+    return null;
+  }
 }
 
 function getGitHubHeaders(repository: GitHubRepository): HeadersInit {
@@ -422,6 +451,14 @@ function getGitHubToken() {
   const ghToken = result.exitCode === 0 ? result.stdout.toString().trim() : "";
   cachedGitHubToken = ghToken || null;
   return cachedGitHubToken;
+}
+
+function getGitHubErrorMessage(error: GitHubErrorResponse) {
+  const detail = error.errors
+    ?.map((item) => (typeof item === "string" ? item : item.message))
+    .find((item): item is string => Boolean(item));
+  if (detail) return detail.replace(/^Review\s+/, "");
+  return error.message;
 }
 
 function toPullRequestSummary(pullRequest: GitHubPullRequestResponse): PullRequestSummary {
