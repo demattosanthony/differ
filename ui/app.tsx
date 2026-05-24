@@ -9,6 +9,7 @@ import { useCompareOverride } from "./hooks/useCompareOverride";
 import { useFileDiff } from "./hooks/useFileDiff";
 import { useProjectFiles } from "./hooks/useProjectFiles";
 import { usePullRequestContext } from "./hooks/usePullRequestContext";
+import { usePullRequestReviewThreads } from "./hooks/usePullRequestReviewThreads";
 import { useSourceFile } from "./hooks/useSourceFile";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useTheme } from "./hooks/useTheme";
@@ -46,6 +47,10 @@ function App() {
   const { data, refreshToken } = useDiffData({ themeId, compare: compareOverride });
   const { data: pullRequestContext, status: pullRequestStatus } = usePullRequestContext({
     enabled: sidebarActivity === "review",
+  });
+  const { data: reviewThreadsData, status: reviewThreadsStatus } = usePullRequestReviewThreads({
+    enabled: sidebarActivity === "review",
+    pullRequestNumber: pullRequestContext?.pullRequest?.number ?? null,
   });
   const files = data?.files ?? emptyDiffFiles;
   const [selected, setSelected] = useSelectedFile(files);
@@ -227,6 +232,8 @@ function App() {
             fileStatus={activeDiffStatus}
             onShowInFiles={() => showProjectFile(activeDiff?.path ?? active?.path ?? null)}
             change={active?.change ?? null}
+            reviewThreads={sidebarActivity === "review" ? reviewThreadsData?.threads ?? [] : []}
+            reviewThreadsStatus={reviewThreadsStatus}
           />
         ) : (
           <SourceView

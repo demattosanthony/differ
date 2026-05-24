@@ -1,4 +1,12 @@
-import type { ChangeSectionId, DiffFile, DiffLineType, DiffReviewCoordinate, DiffSide } from "../types";
+import { useMemo } from "react";
+import type {
+  ChangeSectionId,
+  DiffFile,
+  DiffLineType,
+  DiffReviewCoordinate,
+  DiffSide,
+  PullRequestReviewThread,
+} from "../types";
 import type { DiffViewMode } from "../themes";
 
 type SplitCellType = "add" | "del" | "context" | "empty";
@@ -13,6 +21,8 @@ type DiffViewProps = {
   fileStatus: "idle" | "loading" | "error";
   onShowInFiles: () => void;
   change?: ChangeSectionId | null;
+  reviewThreads?: PullRequestReviewThread[];
+  reviewThreadsStatus?: "idle" | "loading" | "error";
 };
 
 type SplitSideRow = {
@@ -29,6 +39,8 @@ const marker = (type: SplitCellType) => (type === "add" ? "+" : type === "del" ?
 
 const renderContent = (content: string, html?: string) =>
   html ? <span className="content" dangerouslySetInnerHTML={{ __html: html }} /> : <span className="content">{content}</span>;
+
+const getThreadKey = (path: string, side: DiffSide, line: number) => `${path}\0${side}\0${line}`;
 
 const ViewTabs = ({ viewMode, onChange }: { viewMode: DiffViewMode; onChange: (mode: DiffViewMode) => void }) => (
   <div className="view-tabs" role="tablist" aria-label="Diff layout">
@@ -96,7 +108,26 @@ export function DiffView({
   fileStatus,
   onShowInFiles,
   change,
+  reviewThreads = [],
+  reviewThreadsStatus = "idle",
 }: DiffViewProps) {
+  const reviewThreadsByCoordinate = useMemo(() => {
+    const threadsByCoordinate = new Map<string, PullRequestReviewThread[]>();
+    for (const thread of reviewThreads) {
+      if (!thread.side || !thread.line) continue;
+      const key = getThreadKey(thread.path, thread.side, thread.line);
+      const threads = threadsByCoordinate.get(key) ?? [];
+      threads.push(thread);
+      threadsByCoordinate.set(key, threads);
+    }
+    return threadsByCoordinate;
+  }, [reviewThreads]);
+
+  const getReviewThreads = (path: string, coordinate?: DiffReviewCoordinate) => {
+    if (!coordinate) return [];
+    return reviewThreadsByCoordinate.get(getThreadKey(path, coordinate.side, coordinate.line)) ?? [];
+  };
+
   if (fileStatus !== "idle") {
     return (
       <section className="diff-view">
@@ -142,18 +173,21 @@ export function DiffView({
                     const displayNumber = line.type === "del" ? line.oldLineNumber : line.newLineNumber;
                     const reviewSide = line.type === "del" ? "LEFT" : "RIGHT";
                     const reviewCoordinate = line.reviewCoordinates[reviewSide];
+                    const threads = getReviewThreads(file.path, reviewCoordinate);
                     return (
-                      <div
-                        key={lineIndex}
-                        className={`line ${line.type}`}
-                        data-review-path={file.path}
-                        data-review-side={reviewSide}
-                        data-review-line={reviewCoordinate?.line}
-                        data-diff-position={line.diffPosition}
-                      >
-                        <span className="line-num">{displayNumber ?? ""}</span>
-                        <span className="marker">{marker(line.type)}</span>
-                        {renderContent(line.content, line.html)}
+                      <div key={lineIndex} className="line-block">
+                        <div
+                          className={`line ${line.type}`}
+                          data-review-path={file.path}
+                          data-review-side={reviewSide}
+                          data-review-line={reviewCoordinate?.line}
+                          data-diff-position={line.diffPosition}
+                        >
+                          <span className="line-num">{displayNumber ?? ""}</span>
+                          <span className="marker">{marker(line.type)}</span>
+                          {renderContent(line.content, line.html)}
+                        </div>
+                        <ReviewThreads threads={threads} status={reviewThreadsStatus} />
                       </div>
                     );
                   })}
@@ -190,33 +224,37 @@ export function DiffView({
               <div className="split-columns">
                 <div className="split-pane">
                   {leftRows.map((row, lineIndex) => (
-                    <div
-                      key={lineIndex}
-                      className={`split-line ${row.type}`}
-                      data-review-path={file.path}
-                      data-review-side={row.side}
-                      data-review-line={row.reviewCoordinate?.line}
-                      data-diff-position={row.diffPosition}
-                    >
-                      <span className="line-num">{row.number ?? ""}</span>
-                      <span className="marker">{marker(row.type)}</span>
-                      {renderContent(row.content, row.html)}
+                    <div key={lineIndex} className="line-block">
+                      <div
+                        className={`split-line ${row.type}`}
+                        data-review-path={file.path}
+                        data-review-side={row.side}
+                        data-review-line={row.reviewCoordinate?.line}
+                        data-diff-position={row.diffPosition}
+                      >
+                        <span className="line-num">{row.number ?? ""}</span>
+                        <span className="marker">{marker(row.type)}</span>
+                        {renderContent(row.content, row.html)}
+                      </div>
+                      <ReviewThreads threads={getReviewThreads(file.path, row.reviewCoordinate)} status={reviewThreadsStatus} />
                     </div>
                   ))}
                 </div>
                 <div className="split-pane">
                   {rightRows.map((row, lineIndex) => (
-                    <div
-                      key={lineIndex}
-                      className={`split-line ${row.type}`}
-                      data-review-path={file.path}
-                      data-review-side={row.side}
-                      data-review-line={row.reviewCoordinate?.line}
-                      data-diff-position={row.diffPosition}
-                    >
-                      <span className="line-num">{row.number ?? ""}</span>
-                      <span className="marker">{marker(row.type)}</span>
-                      {renderContent(row.content, row.html)}
+                    <div key={lineIndex} className="line-block">
+                      <div
+                        className={`split-line ${row.type}`}
+                        data-review-path={file.path}
+                        data-review-side={row.side}
+                        data-review-line={row.reviewCoordinate?.line}
+                        data-diff-position={row.diffPosition}
+                      >
+                        <span className="line-num">{row.number ?? ""}</span>
+                        <span className="marker">{marker(row.type)}</span>
+                        {renderContent(row.content, row.html)}
+                      </div>
+                      <ReviewThreads threads={getReviewThreads(file.path, row.reviewCoordinate)} status={reviewThreadsStatus} />
                     </div>
                   ))}
                 </div>
@@ -226,6 +264,34 @@ export function DiffView({
           })}
       </div>
     </section>
+  );
+}
+
+function ReviewThreads({
+  threads,
+  status,
+}: {
+  threads: PullRequestReviewThread[];
+  status: "idle" | "loading" | "error";
+}) {
+  if (!threads.length) return null;
+
+  return (
+    <div className="review-threads" data-review-thread-status={status}>
+      {threads.map((thread) => (
+        <div key={thread.id} className="review-thread">
+          {thread.comments.map((comment) => (
+            <article key={comment.id} className="review-comment">
+              <div className="review-comment-header">
+                <span>{comment.author ?? "unknown"}</span>
+                {thread.outdated ? <span>Outdated</span> : null}
+              </div>
+              <div className="review-comment-body">{comment.body}</div>
+            </article>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 

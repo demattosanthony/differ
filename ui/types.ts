@@ -12,6 +12,8 @@ export type {
   DiffData,
   ProjectFilesData,
   PullRequestContextData,
+  PullRequestReviewThread,
+  PullRequestReviewThreadsData,
   SourceFileData,
   SourceLine,
 } from "../shared/types";

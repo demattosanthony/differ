@@ -4,7 +4,7 @@ import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
-import { getPullRequestContext, GitHubApiError } from "./github";
+import { getPullRequestContext, getPullRequestReviewThreads, GitHubApiError } from "./github";
 import { getProjectFilesData, getSourceFile } from "./projectFiles";
 
 type RequestHandlerOptions = {
@@ -65,6 +65,19 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
           return Response.json({ error: error.message }, { status: error.status });
         }
         return Response.json({ error: "Unable to load pull request context" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/github/pr-review-threads") {
+      const pullRequestNumber = getPullRequestNumberFromRequest(url);
+      try {
+        const data = await getPullRequestReviewThreads(repoRoot, pullRequestNumber);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to load pull request review threads" }, { status: 500 });
       }
     }
 

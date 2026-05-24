@@ -110,3 +110,33 @@ export type PullRequestContextData = {
   pullRequest: PullRequestSummary | null;
   files: PullRequestFileData[];
 };
+
+export type PullRequestReviewComment = {
+  id: number;
+  reviewId: number | null;
+  parentId: number | null;
+  author: string | null;
+  body: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PullRequestReviewThread = {
+  id: string;
+  path: string;
+  side: DiffSide | null;
+  line: number | null;
+  startSide: DiffSide | null;
+  startLine: number | null;
+  diffHunk: string;
+  outdated: boolean;
+  comments: PullRequestReviewComment[];
+};
+
+export type PullRequestReviewThreadsData = {
+  repository: GitHubRepository | null;
+  currentBranch: string | null;
+  pullRequest: PullRequestSummary | null;
+  threads: PullRequestReviewThread[];
+};

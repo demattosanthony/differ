@@ -1,7 +1,11 @@
 import type {
+  DiffSide,
   GitHubRepository,
   PullRequestContextData,
   PullRequestFileData,
+  PullRequestReviewComment,
+  PullRequestReviewThread,
+  PullRequestReviewThreadsData,
   PullRequestSummary,
 } from "../shared/types";
 import { runGit } from "./git";
@@ -23,6 +27,27 @@ type GitHubPullRequestFileResponse = {
   deletions: number;
   changes: number;
   patch?: string;
+};
+
+type GitHubReviewCommentResponse = {
+  id: number;
+  pull_request_review_id: number | null;
+  in_reply_to_id?: number;
+  diff_hunk: string;
+  path: string;
+  position: number | null;
+  original_position: number | null;
+  user: { login: string } | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  line?: number | null;
+  original_line?: number | null;
+  side?: string | null;
+  start_line?: number | null;
+  original_start_line?: number | null;
+  start_side?: string | null;
 };
 
 type GitHubErrorResponse = {
@@ -63,6 +88,34 @@ export async function getPullRequestContext(
     currentBranch,
     pullRequest,
     files: await getPullRequestFiles(repository, pullRequest.number),
+  };
+}
+
+export async function getPullRequestReviewThreads(
+  repoRoot: string,
+  pullRequestNumber?: number
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = pullRequestNumber
+    ? await getPullRequest(repository, pullRequestNumber)
+    : await findPullRequestForBranch(repository, currentBranch);
+
+  if (!pullRequest) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const comments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(comments),
   };
 }
 
@@ -123,6 +176,13 @@ async function getPullRequestFiles(repository: GitHubRepository, pullRequestNumb
     `/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/files`
   );
   return files.map(toPullRequestFile);
+}
+
+async function getPullRequestReviewComments(repository: GitHubRepository, pullRequestNumber: number) {
+  return githubFetchPages<GitHubReviewCommentResponse>(
+    repository,
+    `/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/comments`
+  );
 }
 
 async function githubFetchPages<T>(repository: GitHubRepository, path: string) {
@@ -188,4 +248,54 @@ function toPullRequestFile(file: GitHubPullRequestFileResponse): PullRequestFile
     changes: file.changes,
     patch: file.patch,
   };
+}
+
+export function toPullRequestReviewThreads(comments: GitHubReviewCommentResponse[]): PullRequestReviewThread[] {
+  const commentsById = new Map(comments.map((comment) => [comment.id, comment]));
+  const childrenByParentId = new Map<number, GitHubReviewCommentResponse[]>();
+
+  for (const comment of comments) {
+    if (!comment.in_reply_to_id) continue;
+    const children = childrenByParentId.get(comment.in_reply_to_id) ?? [];
+    children.push(comment);
+    childrenByParentId.set(comment.in_reply_to_id, children);
+  }
+
+  return comments
+    .filter((comment) => !comment.in_reply_to_id || !commentsById.has(comment.in_reply_to_id))
+    .map((comment) => {
+      const replies = childrenByParentId.get(comment.id) ?? [];
+      const threadComments = [comment, ...replies].sort((first, second) =>
+        first.created_at.localeCompare(second.created_at)
+      );
+      return {
+        id: String(comment.id),
+        path: comment.path,
+        side: toDiffSide(comment.side),
+        line: comment.line ?? null,
+        startSide: toDiffSide(comment.start_side),
+        startLine: comment.start_line ?? null,
+        diffHunk: comment.diff_hunk,
+        outdated: comment.line === null || comment.position === null,
+        comments: threadComments.map(toPullRequestReviewComment),
+      };
+    });
+}
+
+function toPullRequestReviewComment(comment: GitHubReviewCommentResponse): PullRequestReviewComment {
+  return {
+    id: comment.id,
+    reviewId: comment.pull_request_review_id,
+    parentId: comment.in_reply_to_id ?? null,
+    author: comment.user?.login ?? null,
+    body: comment.body,
+    url: comment.html_url,
+    createdAt: comment.created_at,
+    updatedAt: comment.updated_at,
+  };
+}
+
+function toDiffSide(side: string | null | undefined): DiffSide | null {
+  if (side === "LEFT" || side === "RIGHT") return side;
+  return null;
 }
