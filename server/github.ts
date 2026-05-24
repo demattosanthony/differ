@@ -4,6 +4,7 @@ import type {
   PullRequestContextData,
   PullRequestFileData,
   PullRequestReviewComment,
+  PullRequestReviewEvent,
   PullRequestReviewThread,
   PullRequestReviewThreadsData,
   PullRequestSummary,
@@ -248,6 +249,49 @@ export async function createPullRequestReviewComment(
     currentBranch,
     pullRequest,
     threads: toPullRequestReviewThreads(comments),
+  };
+}
+
+export async function submitPullRequestReview(
+  repoRoot: string,
+  pullRequestNumber: number,
+  event: PullRequestReviewEvent,
+  body: string,
+  comments: Array<{ path: string; side: DiffSide; line: number; body: string }>
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = await getPullRequest(repository, pullRequestNumber);
+  await githubFetch(
+    repository,
+    `/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/reviews`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        commit_id: pullRequest.headSha,
+        event,
+        body,
+        comments: comments.map((comment) => ({
+          path: comment.path,
+          side: comment.side,
+          line: comment.line,
+          body: comment.body,
+        })),
+      }),
+    }
+  );
+
+  const refreshedComments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(refreshedComments),
   };
 }
 

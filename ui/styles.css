@@ -903,6 +903,59 @@ body {
   padding-left: 72px;
 }
 
+.pending-review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel-strong) 44%, transparent);
+}
+
+.pending-review-header,
+.pending-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pending-review-header {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pending-review-actions {
+  flex-wrap: wrap;
+}
+
+.pending-review-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 88px;
+  background: color-mix(in srgb, var(--panel-strong) 36%, transparent);
+  border-left: 2px solid var(--accent);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  white-space: normal;
+}
+
+.split-pane .pending-review-comments {
+  padding-left: 72px;
+}
+
+.review-comment.pending {
+  border-style: dashed;
+}
+
+.review-reply-submit.danger {
+  color: var(--del);
+}
+
 .split-pane .review-threads {
   padding-left: 72px;
 }

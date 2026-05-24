@@ -1,5 +1,5 @@
 import path from "path";
-import type { ChangeSectionId, CompareSpec } from "../shared/types";
+import type { ChangeSectionId, CompareSpec, DiffSide } from "../shared/types";
 import type { ThemeId } from "../shared/themes";
 import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
@@ -11,6 +11,7 @@ import {
   getPullRequestReviewThreads,
   GitHubApiError,
   replyToPullRequestReviewThread,
+  submitPullRequestReview,
   updatePullRequestReviewComment,
 } from "./github";
 import { getProjectFilesData, getSourceFile } from "./projectFiles";
@@ -178,6 +179,32 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       }
     }
 
+    if (url.pathname === "/api/github/pr-reviews" && request.method === "POST") {
+      try {
+        const body = await getJsonRequestBody(request);
+        const pullRequestNumber = getPositiveInteger(body.number);
+        const event = getReviewEvent(body.event);
+        const reviewBody = typeof body.body === "string" ? body.body.trim() : "";
+        const comments = getPendingReviewComments(body.comments);
+
+        if (!pullRequestNumber || !event) {
+          return Response.json({ error: "Missing pull request number or review event" }, { status: 400 });
+        }
+
+        if (event === "REQUEST_CHANGES" && !reviewBody) {
+          return Response.json({ error: "Request changes requires a summary" }, { status: 400 });
+        }
+
+        const data = await submitPullRequestReview(repoRoot, pullRequestNumber, event, reviewBody, comments);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to submit pull request review" }, { status: 500 });
+      }
+    }
+
     const filePath = url.pathname === "/" ? "/index.html" : url.pathname;
     const resolved = path.resolve(distDir, `.${filePath}`);
     if (!resolved.startsWith(distDir)) {
@@ -225,6 +252,23 @@ async function getReviewCommentMutationRequest(request: Request) {
 function getPositiveInteger(value: unknown): number | undefined {
   const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isInteger(number) && number > 0 ? number : undefined;
+}
+
+function getReviewEvent(value: unknown) {
+  return value === "COMMENT" || value === "APPROVE" || value === "REQUEST_CHANGES" ? value : null;
+}
+
+function getPendingReviewComments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const comment = item as Record<string, unknown>;
+    const path = typeof comment.path === "string" ? comment.path.trim() : "";
+    const side = comment.side === "LEFT" || comment.side === "RIGHT" ? comment.side : null;
+    const line = getPositiveInteger(comment.line);
+    const body = typeof comment.body === "string" ? comment.body.trim() : "";
+    return path && side && line && body ? [{ path, side: side as DiffSide, line, body }] : [];
+  });
 }
 
 function getCompareFromRequest(url: URL, repoRoot: string, fallback: CompareSpec): CompareSpec {

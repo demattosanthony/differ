@@ -140,3 +140,13 @@ export type PullRequestReviewThreadsData = {
   pullRequest: PullRequestSummary | null;
   threads: PullRequestReviewThread[];
 };
+
+export type PullRequestReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+export type PendingPullRequestReviewComment = {
+  id: string;
+  path: string;
+  side: DiffSide;
+  line: number;
+  body: string;
+};

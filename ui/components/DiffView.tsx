@@ -5,7 +5,9 @@ import type {
   DiffLineType,
   DiffReviewCoordinate,
   DiffSide,
+  PendingPullRequestReviewComment,
   PullRequestReviewComment,
+  PullRequestReviewEvent,
   PullRequestReviewThread,
   PullRequestReviewThreadsData,
 } from "../types";
@@ -27,6 +29,12 @@ type DiffViewProps = {
   reviewThreadsStatus?: "idle" | "loading" | "error";
   pullRequestNumber?: number | null;
   onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
+  pendingReviewComments?: PendingPullRequestReviewComment[];
+  onAddPendingReviewComment?: (comment: Omit<PendingPullRequestReviewComment, "id">) => void;
+  onUpdatePendingReviewComment?: (id: string, body: string) => void;
+  onDeletePendingReviewComment?: (id: string) => void;
+  onDiscardPendingReview?: () => void;
+  onSubmitPendingReview?: (event: PullRequestReviewEvent, body: string) => Promise<PullRequestReviewThreadsData>;
 };
 
 type SplitSideRow = {
@@ -121,6 +129,12 @@ export function DiffView({
   reviewThreadsStatus = "idle",
   pullRequestNumber = null,
   onReviewThreadsChange,
+  pendingReviewComments = [],
+  onAddPendingReviewComment,
+  onUpdatePendingReviewComment,
+  onDeletePendingReviewComment,
+  onDiscardPendingReview,
+  onSubmitPendingReview,
 }: DiffViewProps) {
   const [newCommentTarget, setNewCommentTarget] = useState<NewReviewCommentTarget | null>(null);
   const reviewThreadsByCoordinate = useMemo(() => {
@@ -139,8 +153,23 @@ export function DiffView({
     if (!coordinate) return [];
     return reviewThreadsByCoordinate.get(getThreadKey(path, coordinate.side, coordinate.line)) ?? [];
   };
+  const pendingCommentsByCoordinate = useMemo(() => {
+    const commentsByCoordinate = new Map<string, PendingPullRequestReviewComment[]>();
+    for (const comment of pendingReviewComments) {
+      const key = getThreadKey(comment.path, comment.side, comment.line);
+      const comments = commentsByCoordinate.get(key) ?? [];
+      comments.push(comment);
+      commentsByCoordinate.set(key, comments);
+    }
+    return commentsByCoordinate;
+  }, [pendingReviewComments]);
+  const getPendingComments = (path: string, coordinate?: DiffReviewCoordinate) => {
+    if (!coordinate) return [];
+    return pendingCommentsByCoordinate.get(getThreadKey(path, coordinate.side, coordinate.line)) ?? [];
+  };
 
   const canCreateComments = Boolean(pullRequestNumber && onReviewThreadsChange);
+  const canAddPendingComments = Boolean(onAddPendingReviewComment);
   const activeNewCommentKey = newCommentTarget
     ? getThreadKey(newCommentTarget.path, newCommentTarget.coordinate.side, newCommentTarget.coordinate.line)
     : null;
@@ -190,6 +219,13 @@ export function DiffView({
             <ViewTabs viewMode={viewMode} onChange={onViewModeChange} />
           </div>
         </div>
+        {pendingReviewComments.length || onSubmitPendingReview ? (
+          <PendingReviewSubmitPanel
+            comments={pendingReviewComments}
+            onDiscard={onDiscardPendingReview}
+            onSubmit={onSubmitPendingReview}
+          />
+        ) : null}
         {file.hunks.map((hunk, index) => {
           if (viewMode === "stacked") {
             return (
@@ -200,6 +236,7 @@ export function DiffView({
                     const reviewSide = line.type === "del" ? "LEFT" : "RIGHT";
                     const reviewCoordinate = line.reviewCoordinates[reviewSide];
                     const threads = getReviewThreads(file.path, reviewCoordinate);
+                    const pendingComments = getPendingComments(file.path, reviewCoordinate);
                     const commentTarget = reviewCoordinate ? { path: file.path, coordinate: reviewCoordinate } : null;
                     const commentTargetKey = commentTarget
                       ? getThreadKey(commentTarget.path, commentTarget.coordinate.side, commentTarget.coordinate.line)
@@ -225,11 +262,17 @@ export function DiffView({
                           pullRequestNumber={pullRequestNumber}
                           onReviewThreadsChange={onReviewThreadsChange}
                         />
+                        <PendingReviewComments
+                          comments={pendingComments}
+                          onUpdate={onUpdatePendingReviewComment}
+                          onDelete={onDeletePendingReviewComment}
+                        />
                         {commentTarget && commentTargetKey === activeNewCommentKey ? (
                           <NewReviewCommentForm
                             target={commentTarget}
                             pullRequestNumber={pullRequestNumber}
                             onCancel={() => setNewCommentTarget(null)}
+                            onAddPendingReviewComment={onAddPendingReviewComment}
                             onReviewThreadsChange={(data) => {
                               onReviewThreadsChange?.(data);
                               setNewCommentTarget(null);
@@ -278,7 +321,11 @@ export function DiffView({
                       filePath={file.path}
                       activeNewCommentKey={activeNewCommentKey}
                       pullRequestNumber={pullRequestNumber}
+                      pendingComments={getPendingComments(file.path, row.reviewCoordinate)}
                       onCancelNewComment={() => setNewCommentTarget(null)}
+                      onAddPendingReviewComment={onAddPendingReviewComment}
+                      onUpdatePendingReviewComment={onUpdatePendingReviewComment}
+                      onDeletePendingReviewComment={onDeletePendingReviewComment}
                       onReviewThreadsChange={(data) => {
                         onReviewThreadsChange?.(data);
                         setNewCommentTarget(null);
@@ -316,7 +363,11 @@ export function DiffView({
                       filePath={file.path}
                       activeNewCommentKey={activeNewCommentKey}
                       pullRequestNumber={pullRequestNumber}
+                      pendingComments={getPendingComments(file.path, row.reviewCoordinate)}
                       onCancelNewComment={() => setNewCommentTarget(null)}
+                      onAddPendingReviewComment={onAddPendingReviewComment}
+                      onUpdatePendingReviewComment={onUpdatePendingReviewComment}
+                      onDeletePendingReviewComment={onDeletePendingReviewComment}
                       onReviewThreadsChange={(data) => {
                         onReviewThreadsChange?.(data);
                         setNewCommentTarget(null);
@@ -400,12 +451,77 @@ function DiffLineRow({
   );
 }
 
+function PendingReviewSubmitPanel({
+  comments,
+  onDiscard,
+  onSubmit,
+}: {
+  comments: PendingPullRequestReviewComment[];
+  onDiscard?: () => void;
+  onSubmit?: (event: PullRequestReviewEvent, body: string) => Promise<PullRequestReviewThreadsData>;
+}) {
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState<"idle" | "submitting">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const hasContent = Boolean(comments.length || body.trim());
+  const canSubmit = Boolean(onSubmit && status !== "submitting" && hasContent);
+
+  const submitReview = async (event: PullRequestReviewEvent) => {
+    if (!onSubmit) return;
+    setStatus("submitting");
+    setError(null);
+    try {
+      await onSubmit(event, body);
+      setBody("");
+      setStatus("idle");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to submit review");
+      setStatus("idle");
+    }
+  };
+
+  return (
+    <section className="pending-review-panel">
+      <div className="pending-review-header">
+        <span>{comments.length} pending {comments.length === 1 ? "comment" : "comments"}</span>
+        <button type="button" className="review-text-button danger" disabled={!comments.length} onClick={onDiscard}>
+          Discard
+        </button>
+      </div>
+      <textarea
+        className="review-reply-input"
+        placeholder="Review summary"
+        value={body}
+        rows={2}
+        disabled={status === "submitting"}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <div className="pending-review-actions">
+        {error ? <span className="review-reply-error">{error}</span> : null}
+        <button type="button" className="tab review-reply-submit" disabled={!canSubmit} onClick={() => submitReview("COMMENT")}>
+          {status === "submitting" ? "Submitting…" : "Comment"}
+        </button>
+        <button type="button" className="tab review-reply-submit" disabled={!onSubmit || status === "submitting"} onClick={() => submitReview("APPROVE")}>
+          Approve
+        </button>
+        <button type="button" className="tab review-reply-submit danger" disabled={!canSubmit} onClick={() => submitReview("REQUEST_CHANGES")}>
+          Request changes
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function SplitLineBlock({
   row,
   filePath,
   activeNewCommentKey,
   pullRequestNumber,
+  pendingComments,
   onCancelNewComment,
+  onAddPendingReviewComment,
+  onUpdatePendingReviewComment,
+  onDeletePendingReviewComment,
   onReviewThreadsChange,
   children,
 }: {
@@ -413,7 +529,11 @@ function SplitLineBlock({
   filePath: string;
   activeNewCommentKey: string | null;
   pullRequestNumber: number | null;
+  pendingComments: PendingPullRequestReviewComment[];
   onCancelNewComment: () => void;
+  onAddPendingReviewComment?: (comment: Omit<PendingPullRequestReviewComment, "id">) => void;
+  onUpdatePendingReviewComment?: (id: string, body: string) => void;
+  onDeletePendingReviewComment?: (id: string) => void;
   onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
   children: ReactNode;
 }) {
@@ -423,11 +543,17 @@ function SplitLineBlock({
   return (
     <div className="line-block">
       {children}
+      <PendingReviewComments
+        comments={pendingComments}
+        onUpdate={onUpdatePendingReviewComment}
+        onDelete={onDeletePendingReviewComment}
+      />
       {target && targetKey === activeNewCommentKey ? (
         <NewReviewCommentForm
           target={target}
           pullRequestNumber={pullRequestNumber}
           onCancel={onCancelNewComment}
+          onAddPendingReviewComment={onAddPendingReviewComment}
           onReviewThreadsChange={onReviewThreadsChange}
         />
       ) : null}
@@ -616,21 +742,85 @@ function ReviewCommentCard({
   );
 }
 
+function PendingReviewComments({
+  comments,
+  onUpdate,
+  onDelete,
+}: {
+  comments: PendingPullRequestReviewComment[];
+  onUpdate?: (id: string, body: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  if (!comments.length) return null;
+
+  return (
+    <div className="pending-review-comments">
+      {comments.map((comment) => (
+        <PendingReviewCommentCard key={comment.id} comment={comment} onUpdate={onUpdate} onDelete={onDelete} />
+      ))}
+    </div>
+  );
+}
+
+function PendingReviewCommentCard({
+  comment,
+  onUpdate,
+  onDelete,
+}: {
+  comment: PendingPullRequestReviewComment;
+  onUpdate?: (id: string, body: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const [draft, setDraft] = useState(comment.body);
+  const changed = draft.trim() && draft !== comment.body;
+
+  return (
+    <article className="review-comment pending">
+      <div className="review-comment-header">
+        <span>Pending</span>
+        <span>{comment.side} line {comment.line}</span>
+        <div className="review-comment-actions">
+          <button
+            type="button"
+            className="review-text-button"
+            disabled={!changed || !onUpdate}
+            onClick={() => onUpdate?.(comment.id, draft)}
+          >
+            Save
+          </button>
+          <button type="button" className="review-text-button danger" onClick={() => onDelete?.(comment.id)}>
+            Delete
+          </button>
+        </div>
+      </div>
+      <textarea
+        className="review-reply-input"
+        value={draft}
+        rows={3}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    </article>
+  );
+}
+
 function NewReviewCommentForm({
   target,
   pullRequestNumber,
   onCancel,
+  onAddPendingReviewComment,
   onReviewThreadsChange,
 }: {
   target: NewReviewCommentTarget;
   pullRequestNumber: number | null;
   onCancel: () => void;
+  onAddPendingReviewComment?: (comment: Omit<PendingPullRequestReviewComment, "id">) => void;
   onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
 }) {
   const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "submitting">("idle");
   const canSubmit = Boolean(pullRequestNumber && body.trim() && status !== "submitting" && onReviewThreadsChange);
+  const canAddPending = Boolean(body.trim() && status !== "submitting" && onAddPendingReviewComment);
 
   const submitComment = async (event: FormEvent) => {
     event.preventDefault();
@@ -654,6 +844,17 @@ function NewReviewCommentForm({
     }
   };
 
+  const addPendingComment = () => {
+    if (!body.trim() || !onAddPendingReviewComment) return;
+    onAddPendingReviewComment({
+      path: target.path,
+      side: target.coordinate.side,
+      line: target.coordinate.line,
+      body: body.trim(),
+    });
+    onCancel();
+  };
+
   return (
     <form className="review-new-comment-form" onSubmit={submitComment}>
       <textarea
@@ -668,6 +869,9 @@ function NewReviewCommentForm({
         {error ? <span className="review-reply-error">{error}</span> : null}
         <button type="button" className="review-text-button" disabled={status === "submitting"} onClick={onCancel}>
           Cancel
+        </button>
+        <button type="button" className="tab review-reply-submit" disabled={!canAddPending} onClick={addPendingComment}>
+          Add pending
         </button>
         <button type="submit" className="tab review-reply-submit" disabled={!canSubmit}>
           {status === "submitting" ? "Commenting…" : "Comment"}

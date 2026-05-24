@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { ChangeSectionId, CompareSpec, DiffFile } from "./types";
+import type {
+  ChangeSectionId,
+  CompareSpec,
+  DiffFile,
+  PendingPullRequestReviewComment,
+  PullRequestReviewEvent,
+  PullRequestReviewThreadsData,
+} from "./types";
 import { themes, type ThemeId, type DiffViewMode } from "./themes";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
@@ -40,6 +47,7 @@ function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [expandedProjectDirs, setExpandedProjectDirs] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingReviewComments, setPendingReviewComments] = useState<PendingPullRequestReviewComment[]>([]);
   const pendingProjectRevealPathRef = useRef<string | null>(null);
 
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
@@ -199,6 +207,54 @@ function App() {
     setExpandedProjectDirs((previous) => (previous.length ? [] : previous));
   }, []);
 
+  const addPendingReviewComment = useCallback((comment: Omit<PendingPullRequestReviewComment, "id">) => {
+    setPendingReviewComments((previous) => [
+      ...previous,
+      {
+        ...comment,
+        id: crypto.randomUUID(),
+      },
+    ]);
+  }, []);
+
+  const updatePendingReviewComment = useCallback((id: string, body: string) => {
+    setPendingReviewComments((previous) =>
+      previous.map((comment) => (comment.id === id ? { ...comment, body } : comment))
+    );
+  }, []);
+
+  const deletePendingReviewComment = useCallback((id: string) => {
+    setPendingReviewComments((previous) => previous.filter((comment) => comment.id !== id));
+  }, []);
+
+  const submitPendingReview = useCallback(
+    async (event: PullRequestReviewEvent, body: string): Promise<PullRequestReviewThreadsData> => {
+      const pullRequestNumber = pullRequestContext?.pullRequest?.number;
+      if (!pullRequestNumber) throw new Error("No active pull request");
+
+      const response = await fetch("/api/github/pr-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          number: pullRequestNumber,
+          event,
+          body,
+          comments: pendingReviewComments,
+        }),
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(typeof errorBody?.error === "string" ? errorBody.error : "Unable to submit review");
+      }
+
+      const data = (await response.json()) as PullRequestReviewThreadsData;
+      setReviewThreadsData(data);
+      setPendingReviewComments([]);
+      return data;
+    },
+    [pendingReviewComments, pullRequestContext?.pullRequest?.number, setReviewThreadsData]
+  );
+
   return (
     <div className="page">
       <main className="layout">
@@ -240,6 +296,12 @@ function App() {
             reviewThreadsStatus={reviewThreadsStatus}
             pullRequestNumber={pullRequestContext?.pullRequest?.number ?? null}
             onReviewThreadsChange={setReviewThreadsData}
+            pendingReviewComments={pendingReviewComments}
+            onAddPendingReviewComment={addPendingReviewComment}
+            onUpdatePendingReviewComment={updatePendingReviewComment}
+            onDeletePendingReviewComment={deletePendingReviewComment}
+            onDiscardPendingReview={() => setPendingReviewComments([])}
+            onSubmitPendingReview={submitPendingReview}
           />
         ) : (
           <SourceView
