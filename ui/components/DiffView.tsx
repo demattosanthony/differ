@@ -337,7 +337,8 @@ function ReviewReplyForm({
   onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
 }) {
   const [body, setBody] = useState("");
-  const [status, setStatus] = useState<"idle" | "submitting" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "submitting">("idle");
   const rootCommentId = thread.comments[0]?.id ?? null;
   const canSubmit = Boolean(pullRequestNumber && rootCommentId && body.trim() && status !== "submitting" && !disabled);
 
@@ -346,6 +347,7 @@ function ReviewReplyForm({
     if (!pullRequestNumber || !rootCommentId || !body.trim() || !onReviewThreadsChange) return;
 
     setStatus("submitting");
+    setError(null);
     try {
       const response = await fetch("/api/github/pr-review-replies", {
         method: "POST",
@@ -356,12 +358,16 @@ function ReviewReplyForm({
           body,
         }),
       });
-      if (!response.ok) throw new Error("Reply failed");
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(typeof errorBody?.error === "string" ? errorBody.error : "Reply failed");
+      }
       onReviewThreadsChange(await response.json());
       setBody("");
       setStatus("idle");
-    } catch {
-      setStatus("error");
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to reply");
+      setStatus("idle");
     }
   };
 
@@ -376,7 +382,7 @@ function ReviewReplyForm({
         onChange={(event) => setBody(event.target.value)}
       />
       <div className="review-reply-actions">
-        {status === "error" ? <span className="review-reply-error">Unable to reply</span> : null}
+        {error ? <span className="review-reply-error">{error}</span> : null}
         <button type="submit" className="tab review-reply-submit" disabled={!canSubmit}>
           {status === "submitting" ? "Replying…" : "Reply"}
         </button>

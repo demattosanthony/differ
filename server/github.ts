@@ -54,6 +54,8 @@ type GitHubErrorResponse = {
   message?: string;
 };
 
+let cachedGitHubToken: string | null | undefined;
+
 export class GitHubApiError extends Error {
   constructor(
     message: string,
@@ -249,7 +251,7 @@ async function githubFetch<T>(repository: GitHubRepository, path: string, init: 
 }
 
 function getGitHubHeaders(repository: GitHubRepository): HeadersInit {
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  const token = getGitHubToken();
   return {
     Accept: "application/vnd.github+json",
     "User-Agent": `differ/${repository.owner}-${repository.name}`,
@@ -257,6 +259,24 @@ function getGitHubHeaders(repository: GitHubRepository): HeadersInit {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+}
+
+function getGitHubToken() {
+  if (cachedGitHubToken !== undefined) return cachedGitHubToken;
+
+  const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (envToken) {
+    cachedGitHubToken = envToken;
+    return cachedGitHubToken;
+  }
+
+  const result = Bun.spawnSync(["gh", "auth", "token"], {
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const ghToken = result.exitCode === 0 ? result.stdout.toString().trim() : "";
+  cachedGitHubToken = ghToken || null;
+  return cachedGitHubToken;
 }
 
 function toPullRequestSummary(pullRequest: GitHubPullRequestResponse): PullRequestSummary {
