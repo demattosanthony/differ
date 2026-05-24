@@ -538,6 +538,50 @@ body {
   color: var(--muted);
 }
 
+.pr-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel-strong) 44%, transparent);
+  font-size: 12px;
+}
+
+.pr-summary.muted {
+  color: var(--muted);
+}
+
+.pr-title {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--title);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.pr-title span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-number {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.pr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .search {
   padding: 7px 9px;
   border-radius: 5px;
@@ -765,12 +809,40 @@ body {
   font-size: 12px;
 }
 
+.line-block {
+  min-width: 0;
+}
+
 .line,
 .split-line {
   display: grid;
-  grid-template-columns: 56px 14px 1fr;
-  gap: 10px;
+  grid-template-columns: 18px 56px 14px 1fr;
+  gap: 8px;
   white-space: pre-wrap;
+}
+
+.review-add-button {
+  width: 16px;
+  height: 16px;
+  align-self: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: transparent;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.reviewable-line:hover .review-add-button,
+.review-add-button:focus-visible {
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  color: var(--muted);
+}
+
+.review-add-button:hover,
+.review-add-button:focus-visible {
+  color: var(--title);
 }
 
 .line {
@@ -803,6 +875,214 @@ body {
   text-align: right;
   color: var(--muted);
   font-size: 11px;
+}
+
+.review-threads {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 88px;
+  background: color-mix(in srgb, var(--panel-strong) 36%, transparent);
+  border-left: 2px solid var(--accent);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  white-space: normal;
+}
+
+.review-new-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 88px;
+  background: color-mix(in srgb, var(--panel-strong) 36%, transparent);
+  border-left: 2px solid var(--accent);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  white-space: normal;
+}
+
+.split-pane .review-new-comment-form {
+  padding-left: 72px;
+}
+
+.pending-review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--panel-strong) 44%, transparent);
+}
+
+.pending-review-header,
+.pending-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pending-review-header {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pending-review-actions {
+  flex-wrap: wrap;
+}
+
+.pending-review-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 88px;
+  background: color-mix(in srgb, var(--panel-strong) 36%, transparent);
+  border-left: 2px solid var(--accent);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  white-space: normal;
+}
+
+.split-pane .pending-review-comments {
+  padding-left: 72px;
+}
+
+.review-comment.pending {
+  border-style: dashed;
+}
+
+.review-reply-submit.danger {
+  color: var(--del);
+}
+
+.split-pane .review-threads {
+  padding-left: 72px;
+}
+
+.review-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 760px;
+}
+
+.review-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--content-bg);
+  color: var(--text);
+}
+
+.review-comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.review-comment-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.review-text-button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.review-text-button:hover:not(:disabled) {
+  color: var(--title);
+}
+
+.review-text-button.danger:hover:not(:disabled),
+.review-text-button.danger:focus-visible {
+  color: var(--del);
+}
+
+.review-text-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.review-comment-body {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.review-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-delete-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.review-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.review-reply-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 54px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--content-bg);
+  color: var(--text);
+  font: 12px/1.45 "IBM Plex Sans", "Helvetica Neue", sans-serif;
+}
+
+.review-reply-input::placeholder {
+  color: var(--muted);
+}
+
+.review-reply-input:focus {
+  outline: 1px solid var(--selection-border);
+  outline-offset: 1px;
+}
+
+.review-reply-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.review-reply-error {
+  color: var(--del);
+  font-size: 11px;
+}
+
+.review-reply-submit:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 

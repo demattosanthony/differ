@@ -1,13 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { ChangeSectionId, CompareSpec, DiffFile } from "./types";
+import type {
+  ChangeSectionId,
+  CompareSpec,
+  DiffFile,
+  PendingPullRequestReviewComment,
+  PullRequestReviewEvent,
+  PullRequestReviewThreadsData,
+} from "./types";
 import { themes, type ThemeId, type DiffViewMode } from "./themes";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
 import { useFileDiff } from "./hooks/useFileDiff";
 import { useProjectFiles } from "./hooks/useProjectFiles";
+import { usePullRequestContext } from "./hooks/usePullRequestContext";
+import { usePullRequestReviewThreads } from "./hooks/usePullRequestReviewThreads";
 import { useSourceFile } from "./hooks/useSourceFile";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useTheme } from "./hooks/useTheme";
@@ -38,11 +47,23 @@ function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [expandedProjectDirs, setExpandedProjectDirs] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pendingReviewComments, setPendingReviewComments] = useState<PendingPullRequestReviewComment[]>([]);
   const pendingProjectRevealPathRef = useRef<string | null>(null);
 
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
   const projectCompare = useMemo<CompareSpec>(() => ({ mode: "working" }), []);
   const { data, refreshToken } = useDiffData({ themeId, compare: compareOverride });
+  const { data: pullRequestContext, status: pullRequestStatus } = usePullRequestContext({
+    enabled: sidebarActivity === "review",
+  });
+  const {
+    data: reviewThreadsData,
+    status: reviewThreadsStatus,
+    setData: setReviewThreadsData,
+  } = usePullRequestReviewThreads({
+    enabled: sidebarActivity === "review",
+    pullRequestNumber: pullRequestContext?.pullRequest?.number ?? null,
+  });
   const files = data?.files ?? emptyDiffFiles;
   const [selected, setSelected] = useSelectedFile(files);
   const active = files.find((file) => selected && matchesSelection(file, selected)) ?? files[0] ?? null;
@@ -79,6 +100,10 @@ function App() {
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
   const emptyDiffMessage = data ? (files.length ? "No matching files" : "No changes") : "Loading diff…";
+  const approveDisabledReason =
+    pullRequestContext?.viewerLogin && pullRequestContext.pullRequest?.author === pullRequestContext.viewerLogin
+      ? "You cannot approve your own pull request"
+      : null;
 
   useEffect(() => {
     if (!repoRoot || typeof window === "undefined") return;
@@ -186,11 +211,61 @@ function App() {
     setExpandedProjectDirs((previous) => (previous.length ? [] : previous));
   }, []);
 
+  const addPendingReviewComment = useCallback((comment: Omit<PendingPullRequestReviewComment, "id">) => {
+    setPendingReviewComments((previous) => [
+      ...previous,
+      {
+        ...comment,
+        id: crypto.randomUUID(),
+      },
+    ]);
+  }, []);
+
+  const updatePendingReviewComment = useCallback((id: string, body: string) => {
+    setPendingReviewComments((previous) =>
+      previous.map((comment) => (comment.id === id ? { ...comment, body } : comment))
+    );
+  }, []);
+
+  const deletePendingReviewComment = useCallback((id: string) => {
+    setPendingReviewComments((previous) => previous.filter((comment) => comment.id !== id));
+  }, []);
+
+  const submitPendingReview = useCallback(
+    async (event: PullRequestReviewEvent, body: string): Promise<PullRequestReviewThreadsData> => {
+      const pullRequestNumber = pullRequestContext?.pullRequest?.number;
+      if (!pullRequestNumber) throw new Error("No active pull request");
+
+      const response = await fetch("/api/github/pr-reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          number: pullRequestNumber,
+          event,
+          body,
+          comments: pendingReviewComments,
+        }),
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        throw new Error(typeof errorBody?.error === "string" ? errorBody.error : "Unable to submit review");
+      }
+
+      const data = (await response.json()) as PullRequestReviewThreadsData;
+      setReviewThreadsData(data);
+      setPendingReviewComments([]);
+      return data;
+    },
+    [pendingReviewComments, pullRequestContext?.pullRequest?.number, setReviewThreadsData]
+  );
+
   return (
     <div className="page">
       <main className="layout">
         <Sidebar
           data={data}
+          pullRequestContext={pullRequestContext}
+          pullRequestStatus={pullRequestStatus}
           projectData={projectData}
           compareLabel={compareLabel}
           scope={sidebarScope}
@@ -221,6 +296,17 @@ function App() {
             fileStatus={activeDiffStatus}
             onShowInFiles={() => showProjectFile(activeDiff?.path ?? active?.path ?? null)}
             change={active?.change ?? null}
+            reviewThreads={sidebarActivity === "review" ? reviewThreadsData?.threads ?? [] : []}
+            reviewThreadsStatus={reviewThreadsStatus}
+            pullRequestNumber={pullRequestContext?.pullRequest?.number ?? null}
+            onReviewThreadsChange={setReviewThreadsData}
+            pendingReviewComments={pendingReviewComments}
+            onAddPendingReviewComment={addPendingReviewComment}
+            onUpdatePendingReviewComment={updatePendingReviewComment}
+            onDeletePendingReviewComment={deletePendingReviewComment}
+            onDiscardPendingReview={() => setPendingReviewComments([])}
+            onSubmitPendingReview={submitPendingReview}
+            approveDisabledReason={approveDisabledReason}
           />
         ) : (
           <SourceView

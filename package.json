@@ -5,6 +5,7 @@
   "scripts": {
     "differ": "bun run differ.ts",
     "build": "mkdir -p dist && bun run build:ui && bun run build:cli",
+    "test": "bun test",
     "build:cli": "bun build ./differ.ts --compile --outfile dist/differ",
     "build:cli:darwin-arm64": "bun build ./differ.ts --compile --target=bun-darwin-arm64 --outfile dist/darwin-arm64/differ",
     "build:cli:darwin-x64": "bun build ./differ.ts --compile --target=bun-darwin-x64 --outfile dist/darwin-x64/differ",
