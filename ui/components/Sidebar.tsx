@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { ChangeSectionId, DiffData, DiffFile, DiffSection, ProjectFilesData } from "../types";
 
@@ -99,6 +99,13 @@ const fileTreeUnsafeCSS = `
   }
 `;
 
+const sidebarPanelWidthStorageKey = "differ-sidebar-panel-width";
+const defaultSidebarPanelWidth = 292;
+const minSidebarPanelWidth = 224;
+const maxSidebarPanelWidth = 640;
+const minContentWidth = 360;
+const activityRailWidth = 48;
+
 export function Sidebar({
   data,
   projectData,
@@ -119,6 +126,12 @@ export function Sidebar({
   onSelectFile,
   onOpenSettings,
 }: SidebarProps) {
+  const sidebarShellRef = useRef<HTMLDivElement | null>(null);
+  const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const initialSidebarPanelWidth = useMemo(getInitialSidebarPanelWidth, []);
+  const [sidebarPanelWidth, setSidebarPanelWidth] = useState(initialSidebarPanelWidth.display);
+  const panelWidthRef = useRef(sidebarPanelWidth);
+  const preferredPanelWidthRef = useRef(initialSidebarPanelWidth.preferred);
   const changedPaths = useMemo(() => files.map((file) => file.path), [files]);
   const paths = useMemo(() => {
     if (scope === "files") return projectFiles;
@@ -151,6 +164,87 @@ export function Sidebar({
   filesByPathRef.current = filesByPath;
   scopeRef.current = scope;
   onSelectFileRef.current = onSelectFile;
+
+  const applySidebarPanelWidth = useCallback((width: number) => {
+    const nextWidth = clampSidebarPanelWidth(width);
+    panelWidthRef.current = nextWidth;
+    sidebarShellRef.current?.style.setProperty("--sidebar-panel-width", `${nextWidth}px`);
+    resizeHandleRef.current?.setAttribute("aria-valuenow", String(Math.round(nextWidth)));
+    return nextWidth;
+  }, []);
+
+  const commitSidebarPanelWidth = useCallback((width: number) => {
+    const preferredWidth = clampPreferredSidebarPanelWidth(width);
+    preferredPanelWidthRef.current = preferredWidth;
+    const currentWidth = panelWidthRef.current;
+    const nextWidth = applySidebarPanelWidth(preferredWidth);
+    if (nextWidth !== currentWidth) setSidebarPanelWidth(nextWidth);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(sidebarPanelWidthStorageKey, String(preferredWidth));
+    }
+  }, [applySidebarPanelWidth]);
+
+  const startSidebarResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const startX = event.clientX;
+    const startWidth = panelWidthRef.current;
+    let frame = 0;
+    let pendingWidth = startWidth;
+
+    const updateWidth = () => {
+      frame = 0;
+      applySidebarPanelWidth(pendingWidth);
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      pendingWidth = startWidth + moveEvent.clientX - startX;
+      if (frame) return;
+      frame = requestAnimationFrame(updateWidth);
+    };
+
+    const finishResize = () => {
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+      document.body.classList.remove("resizing-sidebar");
+      commitSidebarPanelWidth(panelWidthRef.current);
+    };
+
+    document.body.classList.add("resizing-sidebar");
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+  }, [applySidebarPanelWidth, commitSidebarPanelWidth]);
+
+  const handleResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 48 : 16;
+    let nextWidth: number | null = null;
+
+    if (event.key === "ArrowLeft") nextWidth = panelWidthRef.current - step;
+    if (event.key === "ArrowRight") nextWidth = panelWidthRef.current + step;
+    if (event.key === "Home") nextWidth = minSidebarPanelWidth;
+    if (event.key === "End") nextWidth = getSidebarPanelMaxWidth();
+
+    if (nextWidth === null) return;
+    event.preventDefault();
+    commitSidebarPanelWidth(nextWidth);
+  }, [commitSidebarPanelWidth]);
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const nextWidth = clampSidebarPanelWidth(preferredPanelWidthRef.current);
+      if (nextWidth === panelWidthRef.current) return;
+      applySidebarPanelWidth(preferredPanelWidthRef.current);
+      setSidebarPanelWidth(nextWidth);
+    };
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [applySidebarPanelWidth]);
+
   const { model } = useFileTree({
     flattenEmptyDirectories: false,
     initialExpansion: "closed",
@@ -218,7 +312,11 @@ export function Sidebar({
   const emptyMessage = getEmptyMessage({ activity, data, files, paths, projectData, projectFiles, scope });
 
   return (
-    <div className="sidebar-shell">
+    <div
+      className="sidebar-shell"
+      ref={sidebarShellRef}
+      style={{ "--sidebar-panel-width": `${sidebarPanelWidth}px` } as React.CSSProperties}
+    >
       <aside className="activity-rail" aria-label="Primary views">
         <div className="rail-logo" aria-hidden="true">D</div>
         <nav className="activity-nav" aria-label="Primary views">
@@ -309,6 +407,20 @@ export function Sidebar({
           )}
         </div>
       </aside>
+      <div
+        ref={resizeHandleRef}
+        className="sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={minSidebarPanelWidth}
+        aria-valuemax={maxSidebarPanelWidth}
+        aria-valuenow={Math.round(sidebarPanelWidth)}
+        tabIndex={0}
+        title="Resize sidebar"
+        onPointerDown={startSidebarResize}
+        onKeyDown={handleResizeKeyDown}
+      />
     </div>
   );
 }
@@ -518,6 +630,41 @@ function getSearchPlaceholder(activity: SidebarActivity) {
   if (activity === "files") return "Filter files";
   if (activity === "review") return "Filter review";
   return "Filter changes";
+}
+
+function getInitialSidebarPanelWidth() {
+  if (typeof window === "undefined") {
+    return {
+      preferred: defaultSidebarPanelWidth,
+      display: defaultSidebarPanelWidth,
+    };
+  }
+  const stored = localStorage.getItem(sidebarPanelWidthStorageKey);
+  if (stored === null) {
+    return {
+      preferred: defaultSidebarPanelWidth,
+      display: clampSidebarPanelWidth(defaultSidebarPanelWidth),
+    };
+  }
+  const parsed = Number(stored);
+  const preferred = clampPreferredSidebarPanelWidth(Number.isFinite(parsed) ? parsed : defaultSidebarPanelWidth);
+  return {
+    preferred,
+    display: clampSidebarPanelWidth(preferred),
+  };
+}
+
+function clampPreferredSidebarPanelWidth(width: number) {
+  return Math.round(Math.min(maxSidebarPanelWidth, Math.max(minSidebarPanelWidth, width)));
+}
+
+function clampSidebarPanelWidth(width: number) {
+  return Math.round(Math.min(getSidebarPanelMaxWidth(), Math.max(minSidebarPanelWidth, width)));
+}
+
+function getSidebarPanelMaxWidth() {
+  if (typeof window === "undefined") return maxSidebarPanelWidth;
+  return Math.max(minSidebarPanelWidth, Math.min(maxSidebarPanelWidth, window.innerWidth - activityRailWidth - minContentWidth));
 }
 
 function filterFiles(files: DiffFile[], query: string) {

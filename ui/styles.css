@@ -275,6 +275,8 @@ body {
   display: flex;
   flex: 0 0 auto;
   min-height: 0;
+  position: relative;
+  --sidebar-panel-width: 292px;
 }
 
 .activity-rail {
@@ -388,14 +390,54 @@ body {
 .filelist {
   display: flex;
   flex-direction: column;
+  flex: 0 0 var(--sidebar-panel-width);
   background: var(--sidebar-bg);
   border-right: 1px solid var(--line);
-  width: 292px;
-  min-width: 252px;
+  width: var(--sidebar-panel-width);
+  min-width: 0;
   padding: 0;
   overflow: hidden;
   overflow-x: hidden;
   min-height: 0;
+}
+
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 5;
+  width: 8px;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resize-handle::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  content: "";
+}
+
+.sidebar-resize-handle:hover::before,
+.sidebar-resize-handle:focus-visible::before,
+.resizing-sidebar .sidebar-resize-handle::before {
+  background: color-mix(in srgb, var(--selection-border) 72%, transparent);
+}
+
+.sidebar-resize-handle:focus-visible {
+  outline: 0;
+}
+
+.resizing-sidebar,
+.resizing-sidebar * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .sidebar-head {
@@ -938,6 +980,10 @@ body {
     height: min(360px, 45vh);
     border-bottom: 1px solid var(--line);
     max-height: 45vh;
+  }
+
+  .sidebar-resize-handle {
+    display: none;
   }
 
   .activity-rail {
