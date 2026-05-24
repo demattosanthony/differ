@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import type { ChangeSectionId, CompareSpec, DiffFile } from "./types";
@@ -20,7 +20,7 @@ const emptyDiffFiles: DiffFile[] = [];
 const emptyProjectPaths: string[] = [];
 
 function App() {
-  const defaultThemeId: ThemeId = typeof window === "undefined" ? "vscode-dark" : "gruvbox-dark-soft";
+  const defaultThemeId: ThemeId = "vscode-dark";
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useLocalStorageState<DiffViewMode>("differ-view-mode", "stacked", {
     deserialize: (value) => (value === "split" ? "split" : "stacked"),
@@ -38,6 +38,7 @@ function App() {
   const [selectedProjectPath, setSelectedProjectPath] = useState<string | null>(null);
   const [expandedProjectDirs, setExpandedProjectDirs] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const pendingProjectRevealPathRef = useRef<string | null>(null);
 
   const { compareOverride, setCompareOverride, resetCompareOverride, hasCompareOverride } = useCompareOverride();
   const projectCompare = useMemo<CompareSpec>(() => ({ mode: "working" }), []);
@@ -114,7 +115,11 @@ function App() {
   useEffect(() => {
     if (sidebarScope !== "files" || !projectFiles.length) return;
     setSelectedProjectPath((previous) => {
-      if (previous && projectFiles.includes(previous)) return previous;
+      if (previous && projectFiles.includes(previous)) {
+        if (pendingProjectRevealPathRef.current === previous) pendingProjectRevealPathRef.current = null;
+        return previous;
+      }
+      if (previous && previous === pendingProjectRevealPathRef.current) return previous;
       if (active?.path && projectFiles.includes(active.path)) return active.path;
       return projectFiles[0] ?? null;
     });
@@ -122,6 +127,7 @@ function App() {
 
   const revealProjectFile = useCallback((path: string | null) => {
     if (!path) return;
+    pendingProjectRevealPathRef.current = path;
     setSelectedProjectPath(path);
     setExpandedProjectDirs((previous) => {
       const next = uniquePaths([...previous, ...getAncestorDirs(path)]);
@@ -129,7 +135,13 @@ function App() {
     });
   }, []);
 
+  const selectProjectFile = useCallback((path: string) => {
+    pendingProjectRevealPathRef.current = null;
+    setSelectedProjectPath(path);
+  }, []);
+
   const showProjectFile = useCallback((path: string | null) => {
+    setQuery("");
     revealProjectFile(path);
     setSidebarActivity("files");
   }, [revealProjectFile, setSidebarActivity]);
@@ -145,7 +157,8 @@ function App() {
 
   const handleActivityChange = (activity: SidebarActivity) => {
     if (activity === "files") {
-      if (!selectedProjectPath && active?.path) revealProjectFile(active.path);
+      setQuery("");
+      if (active?.path) revealProjectFile(active.path);
       setSidebarActivity(activity);
       return;
     }
@@ -193,7 +206,7 @@ function App() {
           activeChange={active?.change ?? null}
           query={query}
           onQueryChange={setQuery}
-          onSelectFile={sidebarScope === "changes" ? selectChangedFile : (path) => setSelectedProjectPath(path)}
+          onSelectFile={sidebarScope === "changes" ? selectChangedFile : selectProjectFile}
           onOpenSettings={() => setSettingsOpen(true)}
         />
 
@@ -206,7 +219,7 @@ function App() {
             showFullFile={showFullFile}
             onToggleFullFile={setShowFullFile}
             fileStatus={activeDiffStatus}
-            onShowInFiles={() => showProjectFile(active?.path ?? null)}
+            onShowInFiles={() => showProjectFile(activeDiff?.path ?? active?.path ?? null)}
             change={active?.change ?? null}
           />
         ) : (

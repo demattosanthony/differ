@@ -26,6 +26,8 @@ type SidebarProps = {
   onOpenSettings: () => void;
 };
 
+const fileTreeItemHeight = 24;
+
 const fileTreeStyle = {
   backgroundColor: "var(--sidebar-bg)",
   color: "var(--text)",
@@ -45,10 +47,12 @@ const fileTreeStyle = {
   "--trees-scrollbar-thumb-override": "var(--line)",
   "--trees-font-family-override": '"IBM Plex Sans", "Helvetica Neue", sans-serif',
   "--trees-font-size-override": "13px",
-  "--trees-item-padding-x-override": "6px",
+  "--trees-item-padding-x-override": "5px",
   "--trees-item-margin-x-override": "0px",
   "--trees-border-radius-override": "5px",
-  "--trees-level-gap-override": "12px",
+  "--trees-level-gap-override": "6px",
+  "--trees-item-row-gap-override": "2px",
+  "--trees-padding-inline-override": "8px",
 } satisfies React.CSSProperties & Record<string, string>;
 
 const fileTreeUnsafeCSS = `
@@ -246,6 +250,8 @@ export function Sidebar({
   }, [applySidebarPanelWidth]);
 
   const { model } = useFileTree({
+    density: "compact",
+    itemHeight: fileTreeItemHeight,
     flattenEmptyDirectories: false,
     initialExpansion: "closed",
     initialExpandedPaths: expandedPaths,
@@ -537,7 +543,7 @@ function ChangeSectionTree({
 }) {
   const paths = useMemo(() => section.files.map((file) => file.path), [section.files]);
   const expandedPaths = useMemo(() => getDirectoryPaths(paths), [paths]);
-  const treeHeight = Math.max(30, Math.min(360, (paths.length + expandedPaths.length) * 30));
+  const treeHeight = Math.max(fileTreeItemHeight, Math.min(360, (paths.length + expandedPaths.length) * fileTreeItemHeight));
   const pathSet = useMemo(() => new Set(paths), [paths]);
   const filesByPath = useMemo(() => new Map(section.files.map((file) => [file.path, file])), [section.files]);
   const pathSetRef = useRef(pathSet);
@@ -548,6 +554,8 @@ function ChangeSectionTree({
   filesByPathRef.current = filesByPath;
   onSelectFileRef.current = onSelectFile;
   const { model } = useFileTree({
+    density: "compact",
+    itemHeight: fileTreeItemHeight,
     flattenEmptyDirectories: true,
     initialExpansion: "closed",
     initialExpandedPaths: expandedPaths,

@@ -1,6 +1,7 @@
 import path from "path";
-import { pathToFileURL } from "url";
-import { createHighlighter, type BundledLanguage, type Highlighter, type SpecialLanguage, type ThemeInput } from "shiki";
+import { getSharedHighlighter } from "@pierre/diffs";
+import type { SupportedLanguages } from "@pierre/diffs";
+import type { BundledLanguage, Highlighter, SpecialLanguage } from "shiki";
 import type { DiffFile, SourceLine } from "../shared/types";
 import { themes, type ThemeId } from "../shared/themes";
 
@@ -47,18 +48,19 @@ const languageByExtension: Record<string, ShikiLanguage> = {
   gitignore: "codeowners",
 };
 
-const shikiThemesBase: Array<ThemeInput | string> = [
+const shikiThemes = [
   "dark-plus",
   "light-plus",
+  "pierre-dark",
+  "pierre-light",
   "gruvbox-dark-hard",
   "gruvbox-dark-soft",
   "gruvbox-light-medium",
   "dracula",
 ];
 
-const shikiLanguages: ShikiLanguage[] = [
+const shikiLanguages: SupportedLanguages[] = [
   "text",
-  "plaintext",
   "typescript",
   "tsx",
   "javascript",
@@ -95,34 +97,13 @@ let highlighterPromise: Promise<Highlighter> | null = null;
 
 const getHighlighterInstance = () => {
   if (!highlighterPromise) {
-    highlighterPromise = (async () => {
-      const pierreThemes = await loadPierreThemes();
-      return createHighlighter({
-        themes: [...shikiThemesBase, ...pierreThemes],
-        langs: shikiLanguages,
-      });
-    })();
+    highlighterPromise = getSharedHighlighter({
+      themes: shikiThemes,
+      langs: shikiLanguages,
+    }) as Promise<Highlighter>;
   }
   return highlighterPromise;
 };
-
-async function loadPierreThemes(): Promise<ThemeInput[]> {
-  const baseDir = path.dirname(import.meta.dir);
-  const darkPath = path.join(baseDir, "node_modules", "@pierre", "diffs", "dist", "themes", "pierre-dark.js");
-  const lightPath = path.join(baseDir, "node_modules", "@pierre", "diffs", "dist", "themes", "pierre-light.js");
-  try {
-    const [darkModule, lightModule] = await Promise.all([
-      import(pathToFileURL(darkPath).href),
-      import(pathToFileURL(lightPath).href),
-    ]);
-    return [
-      (darkModule as { default?: ThemeInput }).default ?? (darkModule as ThemeInput),
-      (lightModule as { default?: ThemeInput }).default ?? (lightModule as ThemeInput),
-    ];
-  } catch {
-    return [];
-  }
-}
 
 export function getShikiTheme(themeId: ThemeId) {
   return themeById.get(themeId)?.shiki ?? "dark-plus";
