@@ -211,6 +211,46 @@ export async function deletePullRequestReviewComment(
   };
 }
 
+export async function createPullRequestReviewComment(
+  repoRoot: string,
+  pullRequestNumber: number,
+  path: string,
+  side: DiffSide,
+  line: number,
+  body: string
+): Promise<PullRequestReviewThreadsData> {
+  const repository = getGitHubRepository(repoRoot);
+  const currentBranch = getCurrentBranch(repoRoot);
+
+  if (!repository) {
+    return { repository, currentBranch, pullRequest: null, threads: [] };
+  }
+
+  const pullRequest = await getPullRequest(repository, pullRequestNumber);
+  await githubFetch<GitHubReviewCommentResponse>(
+    repository,
+    `/repos/${repository.owner}/${repository.name}/pulls/${pullRequestNumber}/comments`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        body,
+        commit_id: pullRequest.headSha,
+        path,
+        side,
+        line,
+      }),
+    }
+  );
+
+  const comments = await getPullRequestReviewComments(repository, pullRequest.number);
+  return {
+    repository,
+    currentBranch,
+    pullRequest,
+    threads: toPullRequestReviewThreads(comments),
+  };
+}
+
 export function getGitHubRepository(repoRoot: string): GitHubRepository | null {
   const remoteUrl = runGit(repoRoot, ["remote", "get-url", "origin"]).trim();
   const parsed = parseGitHubRemoteUrl(remoteUrl);

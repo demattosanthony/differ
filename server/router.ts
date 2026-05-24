@@ -5,6 +5,7 @@ import type { DiffNotifier } from "./notifier";
 import { getDiffData, getFileDiff } from "./diffData";
 import { normalizeCompare } from "./git";
 import {
+  createPullRequestReviewComment,
   deletePullRequestReviewComment,
   getPullRequestContext,
   getPullRequestReviewThreads,
@@ -131,6 +132,29 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
           return Response.json({ error: error.message }, { status: error.status });
         }
         return Response.json({ error: "Unable to update pull request review comment" }, { status: 500 });
+      }
+    }
+
+    if (url.pathname === "/api/github/pr-review-comments" && request.method === "POST") {
+      try {
+        const body = await getJsonRequestBody(request);
+        const pullRequestNumber = getPositiveInteger(body.number);
+        const line = getPositiveInteger(body.line);
+        const path = typeof body.path === "string" ? body.path.trim() : "";
+        const side = body.side === "LEFT" || body.side === "RIGHT" ? body.side : null;
+        const commentBody = typeof body.body === "string" ? body.body.trim() : "";
+
+        if (!pullRequestNumber || !line || !path || !side || !commentBody) {
+          return Response.json({ error: "Missing pull request number, path, side, line, or body" }, { status: 400 });
+        }
+
+        const data = await createPullRequestReviewComment(repoRoot, pullRequestNumber, path, side, line, commentBody);
+        return Response.json(data);
+      } catch (error) {
+        if (error instanceof GitHubApiError) {
+          return Response.json({ error: error.message }, { status: error.status });
+        }
+        return Response.json({ error: "Unable to create pull request review comment" }, { status: 500 });
       }
     }
 

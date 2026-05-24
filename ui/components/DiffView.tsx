@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type {
   ChangeSectionId,
   DiffFile,
@@ -37,6 +37,11 @@ type SplitSideRow = {
   html?: string;
   diffPosition: number;
   reviewCoordinate?: DiffReviewCoordinate;
+};
+
+type NewReviewCommentTarget = {
+  path: string;
+  coordinate: DiffReviewCoordinate;
 };
 
 const marker = (type: SplitCellType) => (type === "add" ? "+" : type === "del" ? "-" : " ");
@@ -117,6 +122,7 @@ export function DiffView({
   pullRequestNumber = null,
   onReviewThreadsChange,
 }: DiffViewProps) {
+  const [newCommentTarget, setNewCommentTarget] = useState<NewReviewCommentTarget | null>(null);
   const reviewThreadsByCoordinate = useMemo(() => {
     const threadsByCoordinate = new Map<string, PullRequestReviewThread[]>();
     for (const thread of reviewThreads) {
@@ -133,6 +139,20 @@ export function DiffView({
     if (!coordinate) return [];
     return reviewThreadsByCoordinate.get(getThreadKey(path, coordinate.side, coordinate.line)) ?? [];
   };
+
+  const canCreateComments = Boolean(pullRequestNumber && onReviewThreadsChange);
+  const activeNewCommentKey = newCommentTarget
+    ? getThreadKey(newCommentTarget.path, newCommentTarget.coordinate.side, newCommentTarget.coordinate.line)
+    : null;
+
+  useEffect(() => {
+    const handleAddComment = (event: Event) => {
+      const target = event instanceof CustomEvent ? event.detail : null;
+      if (isNewReviewCommentTarget(target)) setNewCommentTarget(target);
+    };
+    window.addEventListener("differ:add-review-comment", handleAddComment);
+    return () => window.removeEventListener("differ:add-review-comment", handleAddComment);
+  }, []);
 
   if (fileStatus !== "idle") {
     return (
@@ -180,25 +200,42 @@ export function DiffView({
                     const reviewSide = line.type === "del" ? "LEFT" : "RIGHT";
                     const reviewCoordinate = line.reviewCoordinates[reviewSide];
                     const threads = getReviewThreads(file.path, reviewCoordinate);
+                    const commentTarget = reviewCoordinate ? { path: file.path, coordinate: reviewCoordinate } : null;
+                    const commentTargetKey = commentTarget
+                      ? getThreadKey(commentTarget.path, commentTarget.coordinate.side, commentTarget.coordinate.line)
+                      : null;
                     return (
                       <div key={lineIndex} className="line-block">
-                        <div
+                        <DiffLineRow
                           className={`line ${line.type}`}
-                          data-review-path={file.path}
-                          data-review-side={reviewSide}
-                          data-review-line={reviewCoordinate?.line}
-                          data-diff-position={line.diffPosition}
+                          path={file.path}
+                          side={reviewSide}
+                          line={reviewCoordinate?.line}
+                          diffPosition={line.diffPosition}
+                          canCreateComment={canCreateComments}
+                          onCreateCommentTarget={commentTarget}
                         >
                           <span className="line-num">{displayNumber ?? ""}</span>
                           <span className="marker">{marker(line.type)}</span>
                           {renderContent(line.content, line.html)}
-                        </div>
+                        </DiffLineRow>
                         <ReviewThreads
                           threads={threads}
                           status={reviewThreadsStatus}
                           pullRequestNumber={pullRequestNumber}
                           onReviewThreadsChange={onReviewThreadsChange}
                         />
+                        {commentTarget && commentTargetKey === activeNewCommentKey ? (
+                          <NewReviewCommentForm
+                            target={commentTarget}
+                            pullRequestNumber={pullRequestNumber}
+                            onCancel={() => setNewCommentTarget(null)}
+                            onReviewThreadsChange={(data) => {
+                              onReviewThreadsChange?.(data);
+                              setNewCommentTarget(null);
+                            }}
+                          />
+                        ) : null}
                       </div>
                     );
                   })}
@@ -235,48 +272,78 @@ export function DiffView({
               <div className="split-columns">
                 <div className="split-pane">
                   {leftRows.map((row, lineIndex) => (
-                    <div key={lineIndex} className="line-block">
-                      <div
+                    <SplitLineBlock
+                      key={lineIndex}
+                      row={row}
+                      filePath={file.path}
+                      activeNewCommentKey={activeNewCommentKey}
+                      pullRequestNumber={pullRequestNumber}
+                      onCancelNewComment={() => setNewCommentTarget(null)}
+                      onReviewThreadsChange={(data) => {
+                        onReviewThreadsChange?.(data);
+                        setNewCommentTarget(null);
+                      }}
+                    >
+                      <DiffLineRow
                         className={`split-line ${row.type}`}
-                        data-review-path={file.path}
-                        data-review-side={row.side}
-                        data-review-line={row.reviewCoordinate?.line}
-                        data-diff-position={row.diffPosition}
+                        path={file.path}
+                        side={row.side}
+                        line={row.reviewCoordinate?.line}
+                        diffPosition={row.diffPosition}
+                        canCreateComment={canCreateComments}
+                        onCreateCommentTarget={
+                          row.reviewCoordinate ? { path: file.path, coordinate: row.reviewCoordinate } : null
+                        }
                       >
                         <span className="line-num">{row.number ?? ""}</span>
                         <span className="marker">{marker(row.type)}</span>
                         {renderContent(row.content, row.html)}
-                      </div>
+                      </DiffLineRow>
                       <ReviewThreads
                         threads={getReviewThreads(file.path, row.reviewCoordinate)}
                         status={reviewThreadsStatus}
                         pullRequestNumber={pullRequestNumber}
                         onReviewThreadsChange={onReviewThreadsChange}
                       />
-                    </div>
+                    </SplitLineBlock>
                   ))}
                 </div>
                 <div className="split-pane">
                   {rightRows.map((row, lineIndex) => (
-                    <div key={lineIndex} className="line-block">
-                      <div
+                    <SplitLineBlock
+                      key={lineIndex}
+                      row={row}
+                      filePath={file.path}
+                      activeNewCommentKey={activeNewCommentKey}
+                      pullRequestNumber={pullRequestNumber}
+                      onCancelNewComment={() => setNewCommentTarget(null)}
+                      onReviewThreadsChange={(data) => {
+                        onReviewThreadsChange?.(data);
+                        setNewCommentTarget(null);
+                      }}
+                    >
+                      <DiffLineRow
                         className={`split-line ${row.type}`}
-                        data-review-path={file.path}
-                        data-review-side={row.side}
-                        data-review-line={row.reviewCoordinate?.line}
-                        data-diff-position={row.diffPosition}
+                        path={file.path}
+                        side={row.side}
+                        line={row.reviewCoordinate?.line}
+                        diffPosition={row.diffPosition}
+                        canCreateComment={canCreateComments}
+                        onCreateCommentTarget={
+                          row.reviewCoordinate ? { path: file.path, coordinate: row.reviewCoordinate } : null
+                        }
                       >
                         <span className="line-num">{row.number ?? ""}</span>
                         <span className="marker">{marker(row.type)}</span>
                         {renderContent(row.content, row.html)}
-                      </div>
+                      </DiffLineRow>
                       <ReviewThreads
                         threads={getReviewThreads(file.path, row.reviewCoordinate)}
                         status={reviewThreadsStatus}
                         pullRequestNumber={pullRequestNumber}
                         onReviewThreadsChange={onReviewThreadsChange}
                       />
-                    </div>
+                    </SplitLineBlock>
                   ))}
                 </div>
               </div>
@@ -285,6 +352,97 @@ export function DiffView({
           })}
       </div>
     </section>
+  );
+}
+
+function DiffLineRow({
+  className,
+  path,
+  side,
+  line,
+  diffPosition,
+  canCreateComment,
+  onCreateCommentTarget,
+  children,
+}: {
+  className: string;
+  path: string;
+  side: DiffSide;
+  line?: number;
+  diffPosition: number;
+  canCreateComment: boolean;
+  onCreateCommentTarget: NewReviewCommentTarget | null;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`${className} reviewable-line`}
+      data-review-path={path}
+      data-review-side={side}
+      data-review-line={line}
+      data-diff-position={diffPosition}
+    >
+      {canCreateComment && onCreateCommentTarget ? (
+        <button
+          type="button"
+          className="review-add-button"
+          aria-label="Add comment"
+          title="Add comment"
+          onClick={() => window.dispatchEvent(new CustomEvent("differ:add-review-comment", { detail: onCreateCommentTarget }))}
+        >
+          +
+        </button>
+      ) : (
+        <span className="review-add-spacer" aria-hidden="true" />
+      )}
+      {children}
+    </div>
+  );
+}
+
+function SplitLineBlock({
+  row,
+  filePath,
+  activeNewCommentKey,
+  pullRequestNumber,
+  onCancelNewComment,
+  onReviewThreadsChange,
+  children,
+}: {
+  row: SplitSideRow;
+  filePath: string;
+  activeNewCommentKey: string | null;
+  pullRequestNumber: number | null;
+  onCancelNewComment: () => void;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
+  children: ReactNode;
+}) {
+  const target = row.reviewCoordinate ? { path: filePath, coordinate: row.reviewCoordinate } : null;
+  const targetKey = target ? getThreadKey(target.path, target.coordinate.side, target.coordinate.line) : null;
+
+  return (
+    <div className="line-block">
+      {children}
+      {target && targetKey === activeNewCommentKey ? (
+        <NewReviewCommentForm
+          target={target}
+          pullRequestNumber={pullRequestNumber}
+          onCancel={onCancelNewComment}
+          onReviewThreadsChange={onReviewThreadsChange}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function isNewReviewCommentTarget(value: unknown): value is NewReviewCommentTarget {
+  if (!value || typeof value !== "object") return false;
+  const target = value as NewReviewCommentTarget;
+  return (
+    typeof target.path === "string" &&
+    Boolean(target.coordinate) &&
+    (target.coordinate.side === "LEFT" || target.coordinate.side === "RIGHT") &&
+    Number.isInteger(target.coordinate.line)
   );
 }
 
@@ -458,6 +616,67 @@ function ReviewCommentCard({
   );
 }
 
+function NewReviewCommentForm({
+  target,
+  pullRequestNumber,
+  onCancel,
+  onReviewThreadsChange,
+}: {
+  target: NewReviewCommentTarget;
+  pullRequestNumber: number | null;
+  onCancel: () => void;
+  onReviewThreadsChange?: (data: PullRequestReviewThreadsData) => void;
+}) {
+  const [body, setBody] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "submitting">("idle");
+  const canSubmit = Boolean(pullRequestNumber && body.trim() && status !== "submitting" && onReviewThreadsChange);
+
+  const submitComment = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!pullRequestNumber || !body.trim() || !onReviewThreadsChange) return;
+
+    setStatus("submitting");
+    setError(null);
+    try {
+      onReviewThreadsChange(
+        await mutateReviewComment("/api/github/pr-review-comments", "POST", {
+          number: pullRequestNumber,
+          path: target.path,
+          side: target.coordinate.side,
+          line: target.coordinate.line,
+          body,
+        })
+      );
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Unable to comment");
+      setStatus("idle");
+    }
+  };
+
+  return (
+    <form className="review-new-comment-form" onSubmit={submitComment}>
+      <textarea
+        className="review-reply-input"
+        placeholder={`Comment on ${target.coordinate.side.toLowerCase()} line ${target.coordinate.line}`}
+        value={body}
+        disabled={status === "submitting"}
+        rows={3}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <div className="review-reply-actions">
+        {error ? <span className="review-reply-error">{error}</span> : null}
+        <button type="button" className="review-text-button" disabled={status === "submitting"} onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="tab review-reply-submit" disabled={!canSubmit}>
+          {status === "submitting" ? "Commenting…" : "Comment"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ReviewReplyForm({
   thread,
   pullRequestNumber,
@@ -521,7 +740,7 @@ function ReviewReplyForm({
   );
 }
 
-async function mutateReviewComment(endpoint: string, method: "PATCH" | "DELETE", body: Record<string, unknown>) {
+async function mutateReviewComment(endpoint: string, method: "POST" | "PATCH" | "DELETE", body: Record<string, unknown>) {
   const response = await fetch(endpoint, {
     method,
     headers: { "Content-Type": "application/json" },

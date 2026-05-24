@@ -816,9 +816,33 @@ body {
 .line,
 .split-line {
   display: grid;
-  grid-template-columns: 56px 14px 1fr;
-  gap: 10px;
+  grid-template-columns: 18px 56px 14px 1fr;
+  gap: 8px;
   white-space: pre-wrap;
+}
+
+.review-add-button {
+  width: 16px;
+  height: 16px;
+  align-self: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: transparent;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.reviewable-line:hover .review-add-button,
+.review-add-button:focus-visible {
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  color: var(--muted);
+}
+
+.review-add-button:hover,
+.review-add-button:focus-visible {
+  color: var(--title);
 }
 
 .line {
@@ -862,6 +886,21 @@ body {
   border-left: 2px solid var(--accent);
   font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
   white-space: normal;
+}
+
+.review-new-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px 88px;
+  background: color-mix(in srgb, var(--panel-strong) 36%, transparent);
+  border-left: 2px solid var(--accent);
+  font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+  white-space: normal;
+}
+
+.split-pane .review-new-comment-form {
+  padding-left: 72px;
 }
 
 .split-pane .review-threads {
