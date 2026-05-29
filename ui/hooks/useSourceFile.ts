@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CompareSpec, SourceFileData } from "../types";
 import type { ThemeId } from "../themes";
 import { appendCompareParams } from "../utils/compare";
+import { useFileVersion } from "./useRepoChanges";
 
 type SourceFileState = {
   data: SourceFileData | null;
@@ -13,14 +14,13 @@ type SourceFileOptions = {
   filePath: string | null;
   themeId: ThemeId;
   compare: CompareSpec | null;
-  refreshToken?: number;
 };
 
 type SourceFileRequest = {
   filePath: string;
   themeId: ThemeId;
   compare: CompareSpec | null;
-  refreshToken?: number;
+  version: string;
 };
 
 const maxCachedSourceFiles = 120;
@@ -32,11 +32,11 @@ export function useSourceFile({
   filePath,
   themeId,
   compare,
-  refreshToken,
 }: SourceFileOptions): SourceFileState {
   const [data, setData] = useState<SourceFileData | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
+  const version = useFileVersion(filePath);
 
   useEffect(() => {
     if (!enabled || !filePath) {
@@ -46,7 +46,7 @@ export function useSourceFile({
     }
 
     let cancelled = false;
-    const request = { filePath, themeId, compare, refreshToken };
+    const request = { filePath, themeId, compare, version };
     const cached = getCachedSource(request);
     if (cached) {
       setData(cached);
@@ -54,8 +54,16 @@ export function useSourceFile({
       return;
     }
 
-    setData(null);
-    setStatus("loading");
+    // Same file changed: keep showing it and swap in place; only blank when we
+    // have nothing for this file yet (first open or file switch).
+    const hasStaleForFile = data?.path === filePath;
+    if (hasStaleForFile) {
+      setStatus("idle");
+    } else {
+      setData(null);
+      setStatus("loading");
+    }
+
     loadSourceFile(request)
       .then((json) => {
         if (cancelled) return;
@@ -64,14 +72,21 @@ export function useSourceFile({
       })
       .catch(() => {
         if (cancelled) return;
-        setData(null);
-        setStatus("error");
+        if (hasStaleForFile) {
+          setStatus("idle");
+        } else {
+          setData(null);
+          setStatus("error");
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [enabled, filePath, themeId, compareKey, refreshToken]);
+    // `data` is read for stale-while-revalidate but excluded from deps on
+    // purpose: only `version`/`filePath` should retrigger the fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, filePath, themeId, compareKey, version]);
 
   return { data, status };
 }
@@ -124,7 +139,7 @@ function rememberSource(key: string, data: SourceFileData) {
   }
 }
 
-function getSourceCacheKey({ filePath, themeId, compare, refreshToken }: SourceFileRequest) {
+function getSourceCacheKey({ filePath, themeId, compare, version }: SourceFileRequest) {
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
-  return [refreshToken ?? 0, compareKey, themeId, filePath].join("\0");
+  return [version, compareKey, themeId, filePath].join("\0");
 }

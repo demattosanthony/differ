@@ -1,28 +1,31 @@
 import path from "path";
 import { watch } from "fs";
 
-export function startRepoWatcher(repoRoot: string, onChange: () => void) {
+// `onChange` receives the repo-relative path that changed, or `null` when the
+// change is repo-wide / unknown (e.g. staging, commits, branch switches) and
+// every file's diff must be considered stale.
+export function startRepoWatcher(repoRoot: string, onChange: (changedPath: string | null) => void) {
   const ignoreRoots = new Set(["node_modules", ".differ-dist"]);
-  const shouldIgnore = (value?: string) => {
-    if (!value) return false;
-    const normalized = value.replace(/\\/g, "/");
-    if (normalized === ".git" || normalized.startsWith(".git/")) return true;
-    const root = normalized.split("/")[0];
+  const normalize = (value: string) => value.replace(/\\/g, "/");
+  const shouldIgnore = (value: string) => {
+    if (value === ".git" || value.startsWith(".git/")) return true;
+    const root = value.split("/")[0];
     return ignoreRoots.has(root);
   };
 
   watch(repoRoot, { recursive: true }, (_event, filename) => {
     if (typeof filename !== "string") {
-      onChange();
+      onChange(null);
       return;
     }
-    if (shouldIgnore(filename)) return;
-    onChange();
+    const normalized = normalize(filename);
+    if (shouldIgnore(normalized)) return;
+    onChange(normalized);
   });
 
   const gitIndex = path.join(repoRoot, ".git", "index");
   try {
-    watch(gitIndex, () => onChange());
+    watch(gitIndex, () => onChange(null));
   } catch {
     // ignore missing git index
   }
@@ -36,7 +39,7 @@ export function startRepoWatcher(repoRoot: string, onChange: () => void) {
   ];
   for (const watchPath of gitWatchPaths) {
     try {
-      watch(watchPath, () => onChange());
+      watch(watchPath, () => onChange(null));
     } catch {
       // ignore missing git refs
     }

@@ -51,12 +51,32 @@ const getCompareKey = (compare: CompareSpec) =>
 const getRepoCompareKey = (repoRoot: string, compare: CompareSpec) => `${repoRoot}::${getCompareKey(compare)}`;
 
 export function invalidateRepoCaches(repoRoot: string) {
+  invalidateRepoListCache(repoRoot);
+  const prefix = `${repoRoot}::`;
+  for (const key of fileDiffCache.keys()) {
+    if (key.startsWith(prefix)) fileDiffCache.delete(key);
+  }
+}
+
+// Invalidate only the diff-summary cache (the file list with numstat counts).
+// Any working-tree change can shift add/del counts or add/remove a file, so the
+// list is always rebuilt on change — but individual file diffs are left intact.
+export function invalidateRepoListCache(repoRoot: string) {
   const prefix = `${repoRoot}::`;
   for (const key of parsedCache.keys()) {
     if (key.startsWith(prefix)) parsedCache.delete(key);
   }
-  for (const key of fileDiffCache.keys()) {
-    if (key.startsWith(prefix)) fileDiffCache.delete(key);
+}
+
+// Invalidate cached diffs for specific files only. Files that did not change
+// keep their highlighted diff, so viewing an untouched file never recomputes.
+export function invalidateRepoFileCache(repoRoot: string, paths: Iterable<string>) {
+  const changed = new Set(paths);
+  if (changed.size === 0) return;
+  const prefix = `${repoRoot}::`;
+  for (const [key, value] of fileDiffCache) {
+    if (!key.startsWith(prefix)) continue;
+    if (changed.has(value.data.path)) fileDiffCache.delete(key);
   }
 }
 

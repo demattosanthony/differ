@@ -85,14 +85,12 @@ function App() {
     compare: compareOverride,
     change: active?.change ?? null,
     full: showFullFile,
-    refreshToken,
   });
   const { data: activeSource, status: activeSourceStatus } = useSourceFile({
     enabled: sidebarScope === "files" && Boolean(activeProjectPath),
     filePath: activeProjectPath,
     themeId,
     compare: projectCompare,
-    refreshToken,
   });
   usePrefetchFileDiffs({
     enabled: sidebarScope === "changes",
@@ -101,7 +99,6 @@ function App() {
     themeId,
     compare: compareOverride,
     full: showFullFile,
-    refreshToken,
   });
 
   useTheme(themeId);

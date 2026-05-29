@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ChangeSectionId, CompareSpec, DiffFile } from "../../shared/types";
 import type { ThemeId } from "../../shared/themes";
 import { appendCompareParams } from "../utils/compare";
+import { getFileVersion, useFileVersion, useListVersion } from "./useRepoChanges";
 
 type FileDiffState = {
   diff: DiffFile | null;
@@ -15,7 +16,6 @@ type FileDiffOptions = {
   compare: CompareSpec | null;
   change?: ChangeSectionId | null;
   full?: boolean;
-  refreshToken?: number;
 };
 
 type FileDiffRequest = {
@@ -24,7 +24,7 @@ type FileDiffRequest = {
   compare: CompareSpec | null;
   change?: ChangeSectionId | null;
   full: boolean;
-  refreshToken?: number;
+  version: string;
 };
 
 type PrefetchFileDiffOptions = {
@@ -34,7 +34,6 @@ type PrefetchFileDiffOptions = {
   themeId: ThemeId;
   compare: CompareSpec | null;
   full?: boolean;
-  refreshToken?: number;
 };
 
 const maxCachedDiffs = 160;
@@ -52,11 +51,11 @@ export function useFileDiff({
   compare,
   change,
   full = false,
-  refreshToken,
 }: FileDiffOptions): FileDiffState {
   const [diff, setDiff] = useState<DiffFile | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
+  const version = useFileVersion(filePath);
 
   useEffect(() => {
     if (!enabled || !filePath) {
@@ -66,7 +65,7 @@ export function useFileDiff({
     }
 
     let cancelled = false;
-    const request = { filePath, themeId, compare, change, full, refreshToken };
+    const request = { filePath, themeId, compare, change, full, version };
     const cached = getCachedDiff(request);
     if (cached) {
       setDiff(cached);
@@ -74,8 +73,17 @@ export function useFileDiff({
       return;
     }
 
-    setDiff(null);
-    setStatus("loading");
+    // Revalidating the same file (its content changed): keep the current diff
+    // on screen and swap it in place. Only blank to a spinner when we have
+    // nothing to show for this file yet (first open or a file switch).
+    const hasStaleForFile = diff?.path === filePath;
+    if (hasStaleForFile) {
+      setStatus("idle");
+    } else {
+      setDiff(null);
+      setStatus("loading");
+    }
+
     loadFileDiff(request)
       .then((json) => {
         if (cancelled) return;
@@ -84,14 +92,21 @@ export function useFileDiff({
       })
       .catch(() => {
         if (cancelled) return;
-        setDiff(null);
-        setStatus("error");
+        if (hasStaleForFile) {
+          setStatus("idle");
+        } else {
+          setDiff(null);
+          setStatus("error");
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [enabled, filePath, themeId, compareKey, change, full, refreshToken]);
+    // `diff` is read for stale-while-revalidate but intentionally excluded from
+    // deps: it must not retrigger the fetch, only `version`/`filePath` should.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, filePath, themeId, compareKey, change, full, version]);
 
   return { diff, status };
 }
@@ -103,9 +118,9 @@ export function usePrefetchFileDiffs({
   themeId,
   compare,
   full = false,
-  refreshToken,
 }: PrefetchFileDiffOptions) {
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
+  const listVersion = useListVersion();
 
   useEffect(() => {
     if (!enabled || files.length === 0) return;
@@ -126,7 +141,7 @@ export function usePrefetchFileDiffs({
           compare,
           change: file.change ?? null,
           full,
-          refreshToken,
+          version: getFileVersion(file.path),
         };
         if (getCachedDiff(request)) continue;
 
@@ -145,7 +160,7 @@ export function usePrefetchFileDiffs({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeFile?.change, activeFile?.path, compareKey, enabled, files, full, refreshToken, themeId]);
+  }, [activeFile?.change, activeFile?.path, compareKey, enabled, files, full, listVersion, themeId]);
 }
 
 function loadFileDiff(request: FileDiffRequest): Promise<DiffFile> {
@@ -218,7 +233,7 @@ function rememberDiff(key: string, diff: DiffFile) {
   }
 }
 
-function getDiffCacheKey({ filePath, themeId, compare, change, full, refreshToken }: FileDiffRequest) {
+function getDiffCacheKey({ filePath, themeId, compare, change, full, version }: FileDiffRequest) {
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
-  return [refreshToken ?? 0, compareKey, themeId, full ? "full" : "diff", change ?? "", filePath].join("\0");
+  return [version, compareKey, themeId, full ? "full" : "diff", change ?? "", filePath].join("\0");
 }

@@ -1,8 +1,8 @@
-import { invalidateRepoCaches } from "./diffData";
+import { invalidateRepoCaches, invalidateRepoFileCache, invalidateRepoListCache } from "./diffData";
 
 export type DiffNotifier = {
   connect: () => Response;
-  notify: () => void;
+  notify: (changedPath: string | null) => void;
 };
 
 export function createDiffNotifier(repoRoot: string): DiffNotifier {
@@ -10,6 +10,8 @@ export function createDiffNotifier(repoRoot: string): DiffNotifier {
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
   const pings = new Map<ReadableStreamDefaultController<Uint8Array>, ReturnType<typeof setInterval>>();
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingPaths = new Set<string>();
+  let pendingAll = false;
 
   const cleanupClient = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     clients.delete(controller);
@@ -28,13 +30,31 @@ export function createDiffNotifier(repoRoot: string): DiffNotifier {
     }
   };
 
-  const notify = () => {
-    if (debounceTimer) return;
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
+  const flush = () => {
+    debounceTimer = null;
+    const all = pendingAll;
+    const paths = Array.from(pendingPaths);
+    pendingAll = false;
+    pendingPaths = new Set();
+
+    if (all) {
       invalidateRepoCaches(repoRoot);
-      broadcast(`event: diff\ndata: ${Date.now()}\n\n`);
-    }, 150);
+      broadcast(`event: diff\ndata: ${JSON.stringify({ all: true })}\n\n`);
+      return;
+    }
+
+    // Working-tree edit: rebuild the file list, but only drop the diffs of the
+    // files that actually changed so untouched files never re-render.
+    invalidateRepoListCache(repoRoot);
+    invalidateRepoFileCache(repoRoot, paths);
+    broadcast(`event: diff\ndata: ${JSON.stringify({ paths })}\n\n`);
+  };
+
+  const notify = (changedPath: string | null) => {
+    if (changedPath === null) pendingAll = true;
+    else pendingPaths.add(changedPath);
+    if (debounceTimer) return;
+    debounceTimer = setTimeout(flush, 150);
   };
 
   const connect = () => {
