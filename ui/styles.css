@@ -10,8 +10,10 @@
   --panel: #1f1f1f;
   --panel-strong: #252526;
   --line: #2a2a2a;
+  --border: var(--line);
   --text: #d4d4d4;
   --muted: #8b8b8b;
+  --muted-foreground: var(--muted);
   --accent: #569cd6;
   --selection: #094771;
   --selection-border: #0e639c;
@@ -244,6 +246,28 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -598,6 +622,7 @@ body {
 
 .sidebar-tree {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   overflow-x: hidden;
   padding: 0 8px 6px;

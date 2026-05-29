@@ -5,6 +5,7 @@ import { createRequestHandler } from "./router";
 import { startRepoWatcher } from "./watch";
 import type { CompareSpec } from "../shared/types";
 import { normalizeCompare } from "./git";
+import { warmHighlighter } from "./highlight";
 
 type StartServerOptions = {
   repoRoot: string;
@@ -21,6 +22,7 @@ export async function startServer({ repoRoot, port, compare }: StartServerOption
   const idleTimeout = 60;
 
   await ensureUiAssets({ uiDir, distDir, isCompiledRuntime });
+  void warmHighlighter().catch(() => {});
 
   const notifier = createDiffNotifier(repoRoot);
   startRepoWatcher(repoRoot, notifier.notify);

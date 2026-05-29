@@ -595,7 +595,6 @@ function ChangeSectionTree({
 }) {
   const paths = useMemo(() => section.files.map((file) => file.path), [section.files]);
   const expandedPaths = useMemo(() => getDirectoryPaths(paths), [paths]);
-  const treeHeight = Math.max(fileTreeItemHeight, Math.min(360, (paths.length + expandedPaths.length) * fileTreeItemHeight));
   const pathSet = useMemo(() => new Set(paths), [paths]);
   const filesByPath = useMemo(() => new Map(section.files.map((file) => [file.path, file])), [section.files]);
   const pathSetRef = useRef(pathSet);
@@ -628,6 +627,7 @@ function ChangeSectionTree({
       onSelectFileRef.current(selectedPath, section.id);
     },
   });
+  const treeHeight = Math.max(fileTreeItemHeight, (paths.length + expandedPaths.length) * fileTreeItemHeight);
 
   useEffect(() => {
     model.resetPaths(paths, { initialExpandedPaths: expandedPaths });

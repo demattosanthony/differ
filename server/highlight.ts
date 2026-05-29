@@ -105,6 +105,10 @@ const getHighlighterInstance = () => {
   return highlighterPromise;
 };
 
+export function warmHighlighter() {
+  return getHighlighterInstance();
+}
+
 export function getShikiTheme(themeId: ThemeId) {
   return themeById.get(themeId)?.shiki ?? "dark-plus";
 }

@@ -13,7 +13,7 @@ import { themes, type ThemeId, type DiffViewMode } from "./themes";
 import { useSelectedFile } from "./hooks/useSelectedFile";
 import { useDiffData } from "./hooks/useDiffData";
 import { useCompareOverride } from "./hooks/useCompareOverride";
-import { useFileDiff } from "./hooks/useFileDiff";
+import { useFileDiff, usePrefetchFileDiffs } from "./hooks/useFileDiff";
 import { useProjectFiles } from "./hooks/useProjectFiles";
 import { usePullRequestContext } from "./hooks/usePullRequestContext";
 import { usePullRequestReviewThreads } from "./hooks/usePullRequestReviewThreads";
@@ -94,12 +94,22 @@ function App() {
     compare: projectCompare,
     refreshToken,
   });
+  usePrefetchFileDiffs({
+    enabled: sidebarScope === "changes",
+    files,
+    activeFile: active,
+    themeId,
+    compare: compareOverride,
+    full: showFullFile,
+    refreshToken,
+  });
 
   useTheme(themeId);
 
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
   const emptyDiffMessage = data ? (files.length ? "No matching files" : "No changes") : "Loading diff…";
+  const reviewActive = sidebarActivity === "review";
   const approveDisabledReason =
     pullRequestContext?.viewerLogin && pullRequestContext.pullRequest?.author === pullRequestContext.viewerLogin
       ? "You cannot approve your own pull request"
@@ -296,17 +306,17 @@ function App() {
             fileStatus={activeDiffStatus}
             onShowInFiles={() => showProjectFile(activeDiff?.path ?? active?.path ?? null)}
             change={active?.change ?? null}
-            reviewThreads={sidebarActivity === "review" ? reviewThreadsData?.threads ?? [] : []}
-            reviewThreadsStatus={reviewThreadsStatus}
-            pullRequestNumber={pullRequestContext?.pullRequest?.number ?? null}
-            onReviewThreadsChange={setReviewThreadsData}
-            pendingReviewComments={pendingReviewComments}
-            onAddPendingReviewComment={addPendingReviewComment}
-            onUpdatePendingReviewComment={updatePendingReviewComment}
-            onDeletePendingReviewComment={deletePendingReviewComment}
-            onDiscardPendingReview={() => setPendingReviewComments([])}
-            onSubmitPendingReview={submitPendingReview}
-            approveDisabledReason={approveDisabledReason}
+            reviewThreads={reviewActive ? reviewThreadsData?.threads ?? [] : []}
+            reviewThreadsStatus={reviewActive ? reviewThreadsStatus : "idle"}
+            pullRequestNumber={reviewActive ? pullRequestContext?.pullRequest?.number ?? null : null}
+            onReviewThreadsChange={reviewActive ? setReviewThreadsData : undefined}
+            pendingReviewComments={reviewActive ? pendingReviewComments : []}
+            onAddPendingReviewComment={reviewActive ? addPendingReviewComment : undefined}
+            onUpdatePendingReviewComment={reviewActive ? updatePendingReviewComment : undefined}
+            onDeletePendingReviewComment={reviewActive ? deletePendingReviewComment : undefined}
+            onDiscardPendingReview={reviewActive ? () => setPendingReviewComments([]) : undefined}
+            onSubmitPendingReview={reviewActive ? submitPendingReview : undefined}
+            approveDisabledReason={reviewActive ? approveDisabledReason : null}
           />
         ) : (
           <SourceView

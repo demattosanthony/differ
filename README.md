@@ -37,10 +37,19 @@ If `differ` is not found after install, add `~/.local/bin` to your `PATH`.
 differ
 ```
 
+When [`portless`](https://github.com/vercel-labs/portless) is installed, `differ` automatically serves the repo at a stable local URL:
+
+```sh
+https://differ.<project>.localhost
+```
+
+If `portless` is not installed, or if `--port`/`--no-portless` is used, `differ` falls back to `http://localhost:4141/` and then to an available random port if needed.
+
 Options:
 
 - `--path <dir>`: repo path (defaults to current directory)
 - `--port <port>`: server port (defaults to 4141)
+- `--no-portless`: skip portless and serve on localhost
 - `--compare <working|range|pr>`: compare working tree (default) or branch range
 - `--base <ref>`: base ref for range compare (defaults to origin/HEAD)
 - `--head <ref>`: head ref for range compare (defaults to HEAD)
