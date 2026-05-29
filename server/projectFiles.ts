@@ -183,7 +183,10 @@ function listWorkingFiles(repoRoot: string) {
 }
 
 function listWorkingFilesUnder(repoRoot: string, prefix: string) {
-  const args = ["ls-files", "-co", "--exclude-standard", "-z"];
+  // Omit --exclude-standard so the explorer shows every working-tree file,
+  // including gitignored ones (e.g. .local). git never lists .git contents,
+  // and normalizeRepoPath strips any stray .git paths.
+  const args = ["ls-files", "-co", "-z"];
   if (prefix) args.push("--", prefix);
   return parseNullDelimited(runGit(repoRoot, args));
 }
