@@ -46,12 +46,17 @@ export function getProjectFilesData(
   return data;
 }
 
+export type SourceFileResult =
+  | { status: "ok"; file: SourceFileData; etag: string }
+  | { status: "not-modified"; etag: string };
+
 export async function getSourceFile(
   repoRoot: string,
   requestedPath: string,
   themeId: ThemeId,
-  compare: CompareSpec
-): Promise<SourceFileData | null> {
+  compare: CompareSpec,
+  ifNoneMatch?: string
+): Promise<SourceFileResult | null> {
   const filePath = normalizeRepoPath(requestedPath);
   if (!filePath) return null;
 
@@ -64,9 +69,13 @@ export async function getSourceFile(
     .update(`${source.size}:${source.truncated ? "1" : "0"}:`)
     .update(source.bytes)
     .digest("hex");
+  // ETag is the content hash, so revalidation skips re-highlighting unchanged files.
+  const etag = `"${hash}"`;
+  if (ifNoneMatch === etag) return { status: "not-modified", etag };
+
   const cacheKey = `${repoRoot}::${getCompareKey(compare)}:${themeId}:${filePath}`;
   const cached = sourceCache.get(cacheKey);
-  if (cached?.hash === hash) return cached.data;
+  if (cached?.hash === hash) return { status: "ok", file: cached.data, etag };
 
   const binary = isProbablyBinary(source.bytes);
   const lines = binary ? [] : await highlightSource(filePath, new TextDecoder().decode(source.bytes), themeId);
@@ -78,7 +87,7 @@ export async function getSourceFile(
     lines,
   };
   sourceCache.set(cacheKey, { hash, data });
-  return data;
+  return { status: "ok", file: data, etag };
 }
 
 function listProjectTreePaths(repoRoot: string, compare: CompareSpec, requestedDirs: string[]): ProjectTree {

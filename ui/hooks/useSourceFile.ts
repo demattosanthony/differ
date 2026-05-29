@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { CompareSpec, SourceFileData } from "../types";
 import type { ThemeId } from "../themes";
 import { appendCompareParams } from "../utils/compare";
-import { useFileVersion } from "./useRepoChanges";
+import { useListVersion } from "./useRepoChanges";
 
 type SourceFileState = {
   data: SourceFileData | null;
@@ -20,12 +20,13 @@ type SourceFileRequest = {
   filePath: string;
   themeId: ThemeId;
   compare: CompareSpec | null;
-  version: string;
 };
 
+type CachedSource = { data: SourceFileData; etag: string | null };
+
 const maxCachedSourceFiles = 120;
-const sourceCache = new Map<string, SourceFileData>();
-const sourceRequests = new Map<string, Promise<SourceFileData>>();
+const sourceCache = new Map<string, CachedSource>();
+const sourceRequests = new Map<string, Promise<CachedSource>>();
 
 export function useSourceFile({
   enabled,
@@ -36,7 +37,7 @@ export function useSourceFile({
   const [data, setData] = useState<SourceFileData | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
-  const version = useFileVersion(filePath);
+  const listVersion = useListVersion();
 
   useEffect(() => {
     if (!enabled || !filePath) {
@@ -46,52 +47,62 @@ export function useSourceFile({
     }
 
     let cancelled = false;
-    const request = { filePath, themeId, compare, version };
+    const request = { filePath, themeId, compare };
     const cached = getCachedSource(request);
+    const showingThisFile = data?.path === filePath;
+
     if (cached) {
-      setData(cached);
+      if (data !== cached.data) setData(cached.data);
       setStatus("idle");
-      return;
-    }
-
-    // Same file changed: keep showing it and swap in place; only blank when we
-    // have nothing for this file yet (first open or file switch).
-    const hasStaleForFile = data?.path === filePath;
-    if (hasStaleForFile) {
-      setStatus("idle");
+      // Revalidate against the server (ETag): unchanged → 304 no-op; changed → swap.
+      revalidateSourceFile(request, cached.etag)
+        .then((fresh) => {
+          if (!cancelled && fresh) setData(fresh.data);
+        })
+        .catch(() => {});
     } else {
-      setData(null);
-      setStatus("loading");
-    }
-
-    loadSourceFile(request)
-      .then((json) => {
-        if (cancelled) return;
-        setData(json);
+      if (!showingThisFile) {
+        setData(null);
+        setStatus("loading");
+      } else {
         setStatus("idle");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        if (hasStaleForFile) {
+      }
+      loadSourceFile(request)
+        .then((result) => {
+          if (cancelled) return;
+          setData(result.data);
           setStatus("idle");
-        } else {
-          setData(null);
-          setStatus("error");
-        }
-      });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (showingThisFile) {
+            setStatus("idle");
+          } else {
+            setData(null);
+            setStatus("error");
+          }
+        });
+    }
 
     return () => {
       cancelled = true;
     };
-    // `data` is read for stale-while-revalidate but excluded from deps on
-    // purpose: only `version`/`filePath` should retrigger the fetch.
+    // `data` is read for stale-while-revalidate but excluded from deps on purpose.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, filePath, themeId, compareKey, version]);
+  }, [enabled, filePath, themeId, compareKey, listVersion]);
 
   return { data, status };
 }
 
-function loadSourceFile(request: SourceFileRequest) {
+function buildSourceFileUrl(request: SourceFileRequest) {
+  const params = new URLSearchParams();
+  params.set("path", request.filePath);
+  params.set("theme", request.themeId);
+  appendCompareParams(params, request.compare);
+  return `/api/source-file?${params.toString()}`;
+}
+
+function loadSourceFile(request: SourceFileRequest): Promise<CachedSource> {
   const key = getSourceCacheKey(request);
   const cached = getCachedSourceByKey(key);
   if (cached) return Promise.resolve(cached);
@@ -99,16 +110,15 @@ function loadSourceFile(request: SourceFileRequest) {
   const inflight = sourceRequests.get(key);
   if (inflight) return inflight;
 
-  const params = new URLSearchParams();
-  params.set("path", request.filePath);
-  params.set("theme", request.themeId);
-  appendCompareParams(params, request.compare);
-
-  const promise = fetch(`/api/source-file?${params.toString()}`)
-    .then((res) => (res.ok ? res.json() : Promise.reject()))
-    .then((json: SourceFileData) => {
-      rememberSource(key, json);
-      return json;
+  const promise = fetch(buildSourceFileUrl(request))
+    .then((res) => {
+      if (!res.ok) return Promise.reject();
+      const etag = res.headers.get("etag");
+      return res.json().then((data: SourceFileData) => ({ data, etag }));
+    })
+    .then((value: CachedSource) => {
+      rememberSource(key, value);
+      return value;
     })
     .finally(() => {
       sourceRequests.delete(key);
@@ -116,6 +126,21 @@ function loadSourceFile(request: SourceFileRequest) {
 
   sourceRequests.set(key, promise);
   return promise;
+}
+
+function revalidateSourceFile(request: SourceFileRequest, etag: string | null): Promise<CachedSource | null> {
+  const headers: Record<string, string> = {};
+  if (etag) headers["If-None-Match"] = etag;
+
+  return fetch(buildSourceFileUrl(request), { headers, cache: "no-store" }).then((res) => {
+    if (res.status === 304 || !res.ok) return null;
+    const nextEtag = res.headers.get("etag");
+    return res.json().then((data: SourceFileData) => {
+      const value: CachedSource = { data, etag: nextEtag };
+      rememberSource(getSourceCacheKey(request), value);
+      return value;
+    });
+  });
 }
 
 function getCachedSource(request: SourceFileRequest) {
@@ -130,8 +155,8 @@ function getCachedSourceByKey(key: string) {
   return cached;
 }
 
-function rememberSource(key: string, data: SourceFileData) {
-  sourceCache.set(key, data);
+function rememberSource(key: string, value: CachedSource) {
+  sourceCache.set(key, value);
   while (sourceCache.size > maxCachedSourceFiles) {
     const oldestKey = sourceCache.keys().next().value;
     if (!oldestKey) return;
@@ -139,7 +164,7 @@ function rememberSource(key: string, data: SourceFileData) {
   }
 }
 
-function getSourceCacheKey({ filePath, themeId, compare, version }: SourceFileRequest) {
+function getSourceCacheKey({ filePath, themeId, compare }: SourceFileRequest) {
   const compareKey = compare ? `${compare.mode}:${compare.base ?? ""}:${compare.head ?? ""}` : "default";
-  return [version, compareKey, themeId, filePath].join("\0");
+  return [compareKey, themeId, filePath].join("\0");
 }

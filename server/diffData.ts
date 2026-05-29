@@ -162,23 +162,33 @@ function getWorkingDiffData(repoRoot: string, compare: CompareSpec): DiffData {
   return data;
 }
 
+export type FileDiffResult =
+  | { status: "ok"; file: DiffFile; etag: string }
+  | { status: "not-modified"; etag: string };
+
 export async function getFileDiff(
   repoRoot: string,
   filePath: string,
   themeId: ThemeId,
   fullContext: boolean,
   compare: CompareSpec,
-  change?: ChangeSectionId
-): Promise<DiffFile | null> {
+  change?: ChangeSectionId,
+  ifNoneMatch?: string
+): Promise<FileDiffResult | null> {
   const unified = fullContext ? 999999 : 3;
   const diff = getFileDiffPatch(repoRoot, filePath, unified, compare, change);
   if (!diff.trim()) return null;
 
   const hash = createHash("sha1").update(diff).digest("hex");
+  // ETag is the diff-content hash, so an unchanged file short-circuits before
+  // any (re-)highlighting — the cheap path for revalidation on every change.
+  const etag = `"${hash}"`;
+  if (ifNoneMatch === etag) return { status: "not-modified", etag };
+
   const theme = getShikiTheme(themeId);
   const cacheKey = `${getRepoCompareKey(repoRoot, compare)}:${change ?? ""}:${filePath}:${theme}:${fullContext ? "full" : "diff"}`;
   const cached = fileDiffCache.get(cacheKey);
-  if (cached && cached.hash === hash) return cached.data;
+  if (cached && cached.hash === hash) return { status: "ok", file: cached.data, etag };
 
   const files = parseDiff(diff);
   const file = files.find((item) => item.path === filePath) ?? files[0];
@@ -187,7 +197,7 @@ export async function getFileDiff(
 
   await highlightDiff([file], themeId);
   fileDiffCache.set(cacheKey, { hash, data: file });
-  return file;
+  return { status: "ok", file, etag };
 }
 
 function summarizeFiles(files: DiffFile[]) {

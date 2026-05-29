@@ -43,9 +43,13 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       const full = url.searchParams.get("full") === "1";
       if (!filePath) return new Response("Missing path", { status: 400 });
       const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
-      const data = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare, getChangeFromRequest(url));
-      if (!data) return new Response("Not found", { status: 404 });
-      return Response.json(data);
+      const ifNoneMatch = request.headers.get("if-none-match") ?? undefined;
+      const result = await getFileDiff(repoRoot, filePath, requestedTheme, full, compare, getChangeFromRequest(url), ifNoneMatch);
+      if (!result) return new Response("Not found", { status: 404 });
+      if (result.status === "not-modified") {
+        return new Response(null, { status: 304, headers: { ETag: result.etag } });
+      }
+      return Response.json(result.file, { headers: { ETag: result.etag, "Cache-Control": "no-cache" } });
     }
 
     if (url.pathname === "/api/project-files") {
@@ -59,9 +63,13 @@ export function createRequestHandler({ repoRoot, distDir, notifier, defaultCompa
       const requestedTheme = (url.searchParams.get("theme") as ThemeId | null) ?? "vscode-dark";
       if (!filePath) return new Response("Missing path", { status: 400 });
       const compare = getCompareFromRequest(url, repoRoot, defaultCompare);
-      const data = await getSourceFile(repoRoot, filePath, requestedTheme, compare);
-      if (!data) return new Response("Not found", { status: 404 });
-      return Response.json(data);
+      const ifNoneMatch = request.headers.get("if-none-match") ?? undefined;
+      const result = await getSourceFile(repoRoot, filePath, requestedTheme, compare, ifNoneMatch);
+      if (!result) return new Response("Not found", { status: 404 });
+      if (result.status === "not-modified") {
+        return new Response(null, { status: 304, headers: { ETag: result.etag } });
+      }
+      return Response.json(result.file, { headers: { ETag: result.etag, "Cache-Control": "no-cache" } });
     }
 
     if (url.pathname === "/api/github/pr-context") {
