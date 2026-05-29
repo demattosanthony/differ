@@ -103,6 +103,10 @@ function App() {
 
   useTheme(themeId);
 
+  useEffect(() => {
+    document.title = data?.repo.name ?? "Differ";
+  }, [data?.repo.name]);
+
   const compareDisplay: CompareSpec = data?.compare ?? compareOverride ?? { mode: "working" };
   const compareLabel = useMemo(() => formatCompareLabel(compareDisplay), [compareDisplay]);
   const emptyDiffMessage = data ? (files.length ? "No matching files" : "No changes") : "Loading diff…";
